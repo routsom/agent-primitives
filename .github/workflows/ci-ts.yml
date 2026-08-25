@@ -1,0 +1,60 @@
+name: CI - TypeScript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "typescript/**"
+      - "specs/**"
+      - ".github/workflows/ci-ts.yml"
+  pull_request:
+    paths:
+      - "typescript/**"
+      - "specs/**"
+      - ".github/workflows/ci-ts.yml"
+
+defaults:
+  run:
+    working-directory: typescript
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Run examples against the mock provider
+        run: |
+          npm run example:research
+          npm run example:single-agent
+        env:
+          DEFAULT_PROVIDER: mock
+
+      - name: Run eval seed set against the mock provider
+        run: npm run eval
+        env:
+          DEFAULT_PROVIDER: mock

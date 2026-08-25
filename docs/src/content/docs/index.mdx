@@ -1,0 +1,73 @@
+---
+title: agent-primitives
+description: A framework-free, multi-LLM boilerplate for building production multi-agent systems, in TypeScript and Python.
+template: splash
+hero:
+  tagline: Orchestrator-worker multi-agent systems, no framework in the way. Clone it, add a key, and it runs - in TypeScript and Python, side by side.
+  actions:
+    - text: Quickstart - TypeScript
+      link: /quickstart-ts/
+      icon: right-arrow
+      variant: primary
+    - text: Quickstart - Python
+      link: /quickstart-py/
+      icon: right-arrow
+      variant: secondary
+    - text: View on GitHub
+      link: https://github.com/routsom/agent-primitives
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## Why this exists
+
+Most multi-agent starting points are either a thin wrapper around one vendor's SDK, or a
+heavyweight framework that owns your control flow. This is neither: the agent loop, harness,
+and orchestration are plain, owned code in both runtimes - see [why no orchestration
+framework](/architecture/#why-no-orchestration-framework).
+
+<CardGrid stagger>
+	<Card title="No orchestration framework" icon="puzzle">
+		LangGraph, CrewAI, AutoGen, etc. are not dependencies here. You own the agent loop,
+		the harness, and the orchestration - inspectable and modifiable without fighting a
+		framework's opinions.
+	</Card>
+	<Card title="Multi-LLM by design" icon="random">
+		Thin adapters over each vendor's *official* SDK - Anthropic, OpenAI, Gemini - not a
+		third-party routing layer. See [Providers](/providers/).
+	</Card>
+	<Card title="MCP and A2A wired in" icon="setting">
+		Mount external MCP servers as tools, expose this system's agents over Agent-to-Agent.
+		See [MCP](/mcp/) and [A2A](/a2a/).
+	</Card>
+	<Card title="TypeScript and Python, in parity" icon="seti:typescript">
+		Two independent, fully working reference implementations reading the same shared
+		contracts (`specs/`), so neither language is a second-class citizen.
+	</Card>
+	<Card title="Built for agentic coding" icon="open-book">
+		`CLAUDE.md`, hooks, subagent role definitions, and slash commands are first-class -
+		see [Claude Code integration](/claude-code/).
+	</Card>
+	<Card title="Grounded in written architecture" icon="document">
+		Every module traces back to a specific section of the architecture notes this
+		boilerplate implements. See [Architecture](/architecture/).
+	</Card>
+</CardGrid>
+
+## What's in the box
+
+| Layer | Purpose |
+|---|---|
+| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs, plus a mock for tests |
+| `harness/` | Validation, per-role tool scoping, idempotency, delegation-depth cap, tool-call budgets |
+| `tools/`, `mcp/` | Typed tool contract; MCP client and server |
+| `agents/` | Lead agent, subagents, citation/synthesis agent |
+| `a2a/` | Agent-to-Agent server and client |
+| `memory/`, `artifacts/` | Durable plan memory, artifact store with lightweight references |
+| `orchestrator/` | Synchronous fan-out/fan-in with circuit breakers and partial-completion policy |
+| `tracing/` | Nested spans (turn → agent → call), OpenTelemetry-compatible |
+| `evals/` | LLM-as-judge with a multi-criteria rubric, CI-runnable |
+
+Both `typescript/` and `python/` implement every layer, reading shared contracts from `specs/`.

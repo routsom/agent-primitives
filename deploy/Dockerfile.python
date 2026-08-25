@@ -1,0 +1,22 @@
+# Build context must be the repository root (not python/), since specs/ and reference/ are
+# read at runtime and must ship alongside the runtime:
+#   docker build -f deploy/Dockerfile.python -t multiagent-boilerplate-py .
+#
+# Default CMD starts multiagent_boilerplate.server's A2A server (exposes the subagent role).
+# Swap it for your own entrypoint - e.g. an HTTP API wrapping run_lead_agent - by overriding
+# CMD at run time or adding another module and rebuilding.
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runtime
+WORKDIR /app
+
+COPY python/pyproject.toml python/uv.lock python/README.md ./python/
+COPY python/src/ ./python/src/
+RUN cd python && uv sync --locked --no-dev
+
+COPY specs/ ./specs/
+COPY reference/ ./reference/
+
+WORKDIR /app/python
+ENV PATH="/app/python/.venv/bin:$PATH"
+EXPOSE 8787
+CMD ["uv", "run", "python", "-m", "multiagent_boilerplate.server"]

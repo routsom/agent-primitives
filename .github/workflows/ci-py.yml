@@ -1,0 +1,54 @@
+name: CI - Python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "specs/**"
+      - ".github/workflows/ci-py.yml"
+  pull_request:
+    paths:
+      - "python/**"
+      - "specs/**"
+      - ".github/workflows/ci-py.yml"
+
+defaults:
+  run:
+    working-directory: python
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "python/uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Run examples against the mock provider
+        run: |
+          uv run python -m examples.research_task
+          uv run python -m examples.single_agent
+        env:
+          DEFAULT_PROVIDER: mock
+
+      - name: Run eval seed set against the mock provider
+        run: uv run python -m multiagent_boilerplate.evals.run_eval
+        env:
+          DEFAULT_PROVIDER: mock

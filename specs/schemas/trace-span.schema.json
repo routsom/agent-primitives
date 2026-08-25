@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-primitives.dev/specs/schemas/trace-span.schema.json",
+  "title": "TraceSpan",
+  "description": "One node in the turn -> agent -> model/tool-call trace tree emitted by tracing/. Structurally compatible with an OpenTelemetry span so it can be exported as-is. See reference/multi-agent-architecture-notes.md section 11.",
+  "type": "object",
+  "required": ["spanId", "traceId", "kind", "name", "startedAt", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "spanId": { "type": "string" },
+    "traceId": { "type": "string" },
+    "parentSpanId": { "type": ["string", "null"] },
+    "kind": {
+      "type": "string",
+      "enum": ["turn", "agent", "model_call", "tool_call", "a2a_call"]
+    },
+    "name": { "type": "string" },
+    "agentRole": { "type": ["string", "null"] },
+    "delegationDepth": { "type": "integer", "minimum": 0, "default": 0 },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["ok", "error", "partial"] },
+    "tokenUsage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "cachedInputTokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "description": "Free-form key/value metadata (e.g. tool name, model id, provider)."
+    }
+  }
+}

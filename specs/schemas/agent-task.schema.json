@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-primitives.dev/specs/schemas/agent-task.schema.json",
+  "title": "AgentTask",
+  "description": "What a lead agent hands a subagent when delegating. Every field is required deliberately - vague delegation (a bare objective string) is the documented cause of subagents duplicating each other's work. See reference/multi-agent-architecture-notes.md section 3.",
+  "type": "object",
+  "required": ["taskId", "role", "objective", "outputFormat", "allowedTools", "boundaries", "budget"],
+  "additionalProperties": false,
+  "properties": {
+    "taskId": { "type": "string" },
+    "role": {
+      "type": "string",
+      "description": "Agent role id, must match a definition in specs/agents/."
+    },
+    "objective": {
+      "type": "string",
+      "description": "Specific, concrete goal - not a generic topic string."
+    },
+    "outputFormat": {
+      "type": "string",
+      "description": "Expected shape of the distilled return value, e.g. 'bullet list of findings with source URLs'."
+    },
+    "allowedTools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicit tool allowlist for this task, a subset of the role's scoped tools in specs/agents/."
+    },
+    "boundaries": {
+      "type": "string",
+      "description": "What distinguishes this task from sibling subagents' tasks - the explicit division of labor."
+    },
+    "budget": {
+      "type": "object",
+      "required": ["maxToolCalls"],
+      "additionalProperties": false,
+      "properties": {
+        "maxToolCalls": { "type": "integer", "minimum": 1 },
+        "maxDelegationDepth": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+    "parentTaskId": { "type": ["string", "null"] }
+  }
+}

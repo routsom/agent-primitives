@@ -1,0 +1,39 @@
+{
+  "name": "@agent-primitives/typescript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript reference runtime for agent-primitives",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/server.ts --format esm --dts --out-dir dist",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src examples test --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "example:research": "tsx examples/research-task/index.ts",
+    "example:single-agent": "tsx examples/single-agent/index.ts",
+    "eval": "tsx src/evals/runEval.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "@google/genai": "^2.18.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^16.4.5",
+    "openai": "^6.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "eslint": "^10.9.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

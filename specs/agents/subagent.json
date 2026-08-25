@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "role": "subagent",
+  "description": "Isolated worker: executes one AgentTask from the lead agent, distills findings, writes large output to the artifact store.",
+  "promptFile": "specs/prompts/subagent.md",
+  "allowedTools": ["search_web", "read_file", "write_artifact", "mcp_call"],
+  "canSpawn": [],
+  "maxDelegationDepth": 0,
+  "budget": {
+    "maxToolCalls": 15
+  },
+  "modelPreference": {
+    "default": "anthropic",
+    "fallback": ["openai", "google"]
+  }
+}

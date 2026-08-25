@@ -1,0 +1,39 @@
+# --- Node / TypeScript ---
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+coverage/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist-python/
+
+# --- Astro / Starlight docs ---
+docs/dist/
+docs/.astro/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Artifacts / traces (runtime output, not source) ---
+.artifacts/
+.traces/
+
+# --- Editors / OS ---
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# --- Claude Code local state ---
+.claude/settings.local.json

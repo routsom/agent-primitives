@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "role": "judge",
+  "description": "Evals-only role: scores a completed run against the multi-criteria rubric. Never invoked mid-task, only by evals/ after a run completes.",
+  "promptFile": "specs/prompts/judge.md",
+  "allowedTools": ["read_artifact"],
+  "canSpawn": [],
+  "maxDelegationDepth": 0,
+  "budget": {
+    "maxToolCalls": 5
+  },
+  "modelPreference": {
+    "default": "anthropic",
+    "fallback": ["openai", "google"]
+  }
+}

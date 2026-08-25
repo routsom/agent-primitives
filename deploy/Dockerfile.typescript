@@ -1,0 +1,29 @@
+# Build context must be the repository root (not typescript/), since specs/ and reference/
+# are read at runtime and must ship alongside the compiled runtime:
+#   docker build -f deploy/Dockerfile.typescript -t multiagent-boilerplate-ts .
+#
+# Default CMD starts src/server.ts's A2A server (exposes the subagent role). Swap it for your
+# own entrypoint - e.g. an HTTP API wrapping runLeadAgent - by overriding CMD at run time or
+# adding another src/*.ts entrypoint and rebuilding.
+
+FROM node:22-slim AS build
+WORKDIR /app/typescript
+COPY typescript/package.json typescript/package-lock.json ./
+RUN npm ci
+COPY typescript/ ./
+RUN npm run build
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY typescript/package.json typescript/package-lock.json ./typescript/
+RUN cd typescript && npm ci --omit=dev
+
+COPY --from=build /app/typescript/dist ./typescript/dist
+COPY specs/ ./specs/
+COPY reference/ ./reference/
+
+WORKDIR /app/typescript
+EXPOSE 8787
+CMD ["node", "dist/server.js"]

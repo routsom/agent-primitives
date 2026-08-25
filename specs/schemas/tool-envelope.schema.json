@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-primitives.dev/specs/schemas/tool-envelope.schema.json",
+  "title": "ToolCallEnvelope / ToolResultEnvelope",
+  "description": "The typed input/output contract every tool in tools/ must satisfy. Wraps the tool's own input/output schema with harness-level metadata so validation, idempotency, and scoping are uniform across tools. See reference/multi-agent-architecture-notes.md sections 6-8.",
+  "$defs": {
+    "toolCall": {
+      "type": "object",
+      "required": ["idempotencyKey", "toolName", "agentRole", "input"],
+      "additionalProperties": false,
+      "properties": {
+        "idempotencyKey": {
+          "type": "string",
+          "description": "Caller-generated key. The harness must treat repeated calls with the same key as a single logical operation."
+        },
+        "toolName": { "type": "string" },
+        "agentRole": {
+          "type": "string",
+          "description": "Which agent role is invoking the tool, checked against that role's scoped tool list before execution."
+        },
+        "input": {
+          "type": "object",
+          "description": "Validated against the individual tool's own JSON Schema, referenced by toolName."
+        },
+        "delegationDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many agent-to-agent hops produced this call; the harness rejects calls exceeding the configured cap."
+        }
+      }
+    },
+    "toolResult": {
+      "type": "object",
+      "required": ["idempotencyKey", "toolName", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "idempotencyKey": { "type": "string" },
+        "toolName": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "error", "rejected"] },
+        "output": {
+          "description": "Present when status is ok. Should be small; route large payloads through the artifact store and return an artifact-ref instead."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present when status is error or rejected.",
+          "required": ["message"],
+          "properties": {
+            "message": { "type": "string" },
+            "code": { "type": "string" },
+            "retryable": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/toolCall" },
+    { "$ref": "#/$defs/toolResult" }
+  ]
+}

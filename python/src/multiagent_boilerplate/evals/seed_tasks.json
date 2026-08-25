@@ -1,0 +1,14 @@
+[
+  {
+    "id": "topology-tradeoffs",
+    "query": "What are the main tradeoffs between orchestrator-worker and sequential-pipeline multi-agent topologies?"
+  },
+  {
+    "id": "when-to-use-multiagent",
+    "query": "When is a multi-agent system actually justified instead of a single well-prompted agent?"
+  },
+  {
+    "id": "trust-boundaries",
+    "query": "What trust boundary issues are unique to multi-agent systems compared to single-agent tool use?"
+  }
+]

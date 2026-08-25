@@ -1,0 +1,47 @@
+[project]
+name = "agent-primitives"
+version = "0.1.0"
+description = "Python reference runtime for agent-primitives"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "anthropic>=1.0.0",
+    "openai>=3.3.1",
+    "google-genai>=2.19.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.3",
+    "mcp>=2.1.1",
+    "httpx>=0.28.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.4",
+]
+
+[tool.uv]
+# cryptography (pulled in transitively via mcp -> pyjwt[crypto]) ships macOS wheels a
+# release or two behind latest; pin below that so `uv sync` doesn't fall back to a from-source
+# build that requires a local Rust/OpenSSL toolchain.
+constraint-dependencies = ["cryptography<47"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/multiagent_boilerplate"]

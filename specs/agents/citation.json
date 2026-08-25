@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "role": "citation",
+  "description": "Synthesizes aggregated distilled findings into the final cited response. No research tools - composition and attribution only.",
+  "promptFile": "specs/prompts/citation-agent.md",
+  "allowedTools": ["read_artifact"],
+  "canSpawn": [],
+  "maxDelegationDepth": 0,
+  "budget": {
+    "maxToolCalls": 5
+  },
+  "modelPreference": {
+    "default": "anthropic",
+    "fallback": ["openai", "google"]
+  }
+}

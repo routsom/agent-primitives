@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "role": "lead",
+  "description": "Plans, decomposes, delegates, judges sufficiency, decides final response.",
+  "promptFile": "specs/prompts/lead-agent.md",
+  "allowedTools": ["spawn_subagents", "read_artifact", "save_plan", "search_web", "read_file"],
+  "canSpawn": ["subagent", "citation"],
+  "maxDelegationDepth": 2,
+  "budget": {
+    "maxToolCalls": 40,
+    "maxSubagents": 8
+  },
+  "modelPreference": {
+    "comment": "Logical provider choice only - concrete model ids are resolved from each runtime's config/env at call time, never hardcoded in specs, since vendor model ids change frequently.",
+    "default": "anthropic",
+    "fallback": ["openai", "google"]
+  }
+}

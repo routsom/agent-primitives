@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-primitives.dev/specs/schemas/artifact-ref.schema.json",
+  "title": "ArtifactRef",
+  "description": "Lightweight reference to a large output stored externally (artifacts/), returned to the lead agent instead of the raw content. See reference/multi-agent-architecture-notes.md section 4 (avoid the 'game of telephone').",
+  "type": "object",
+  "required": ["artifactId", "kind", "sizeBytes", "createdBy", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "artifactId": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["raw-findings", "report", "code", "generated-data", "trace-export"]
+    },
+    "sizeBytes": { "type": "integer", "minimum": 0 },
+    "createdBy": {
+      "type": "string",
+      "description": "Agent role or id that wrote this artifact - establishes write ownership."
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "summary": {
+      "type": "string",
+      "description": "One-paragraph distillation, safe to inline in a lead agent's context without fetching the full artifact."
+    },
+    "uri": {
+      "type": "string",
+      "description": "Storage location (e.g. file:// path for the local FS store, s3:// for a pluggable backend). Not assumed directly readable by every caller."
+    }
+  }
+}
