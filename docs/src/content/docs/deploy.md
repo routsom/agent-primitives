@@ -52,10 +52,11 @@ restarted lead agent recover its strategy rather than starting over blind.
 ## Combine model adaptability with deterministic safeguards
 
 Letting an agent itself adapt when a tool fails (informing it and letting it reroute) works
-well, but pair that adaptability with deterministic retry logic and regular checkpoints
-underneath - the same defense-in-depth principle as elsewhere in this system, applied at the
-scale of a whole multi-step run. The orchestrator's per-subagent retry (distinct from the
-delegation-depth cap - see [Harness](/harness/)) is this in practice.
+well, but pair that adaptability with deterministic safeguards underneath - the same
+defense-in-depth principle applied at the scale of a whole multi-step run. This is already in
+place: **provider resilience** (timeout/retry/fallback for model-down), the **per-tool circuit
+breaker** (for tool-backend-down), the **session token ceiling**, and error classification that
+decides retryability structurally. See [Reliability & guarantees](/reliability/) for all of them.
 
 ## Kill switch, two levels
 

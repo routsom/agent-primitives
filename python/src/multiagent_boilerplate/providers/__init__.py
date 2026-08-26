@@ -3,9 +3,17 @@ from __future__ import annotations
 import os
 
 from .mock import MockChatModel
+from .resilient import ResilienceOptions, ResilientChatModel
 from .types import ChatModel
 
-__all__ = ["ChatModel", "MockChatModel", "resolve_provider"]
+__all__ = [
+    "ChatModel",
+    "MockChatModel",
+    "ResilientChatModel",
+    "ResilienceOptions",
+    "resolve_provider",
+    "resolve_resilient_model",
+]
 
 
 def resolve_provider(name: str) -> ChatModel:
@@ -34,3 +42,18 @@ def resolve_provider(name: str) -> ChatModel:
 
         return GeminiChatModel(key)
     return MockChatModel()
+
+
+def resolve_resilient_model(
+    name: str,
+    resilience: ResilienceOptions,
+    fallback_providers: list[str] | None = None,
+) -> ChatModel:
+    """Resolves the provider AND wraps it in the resilience decorator (timeout + retry +
+    fallback). Entry points should use this rather than resolve_provider directly, so every
+    real model call gets timeout/retry protection. Fallbacks are opt-in via
+    fallback_providers - by default there are none, to avoid surprising cross-provider calls;
+    add them deliberately when you want model/region failover (notes section 15)."""
+    primary = resolve_provider(name)
+    resilience.fallbacks = [resolve_provider(p) for p in (fallback_providers or [])]
+    return ResilientChatModel(primary, resilience)

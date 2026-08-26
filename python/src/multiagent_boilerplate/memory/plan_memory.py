@@ -8,7 +8,16 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class PlanStore(Protocol):
+    """The seam for durable plan storage. PlanMemory (local filesystem) is the shipped default;
+    a production durable-job store would implement this same interface against a database."""
+
+    async def save(self, run_id: str, plan: Any) -> None: ...
+    async def load(self, run_id: str) -> Any | None: ...
 
 
 class PlanMemory:

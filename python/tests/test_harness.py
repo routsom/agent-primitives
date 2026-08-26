@@ -5,6 +5,8 @@ from multiagent_boilerplate.harness import (
     DelegationDepthExceededError,
     HarnessScopeError,
     IdempotencyCache,
+    RunBudget,
+    RunBudgetExceededError,
     SubagentCountExceededError,
     ToolCallBudget,
     ToolCallBudgetExceededError,
@@ -12,6 +14,29 @@ from multiagent_boilerplate.harness import (
     assert_subagent_count_within_cap,
     assert_tool_allowed,
 )
+
+
+class _Usage:
+    def __init__(self, input_tokens: int, output_tokens: int) -> None:
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+def test_run_budget_trips_at_ceiling() -> None:
+    budget = RunBudget(100)
+    budget.record(_Usage(40, 30))
+    assert budget.is_exhausted() is False
+    budget.record(_Usage(20, 20))
+    assert budget.is_exhausted() is True
+    with pytest.raises(RunBudgetExceededError):
+        budget.assert_within_ceiling()
+    assert budget.consumed == 110
+
+
+def test_run_budget_zero_is_unlimited() -> None:
+    budget = RunBudget(0)
+    budget.record(_Usage(1_000_000, 1_000_000))
+    assert budget.is_exhausted() is False
 
 
 def _role(allowed_tools: list[str]) -> AgentRoleDef:

@@ -21,7 +21,10 @@ heavyweight framework that owns your control flow. This is neither:
 - **Multi-LLM by design.** Thin adapters over each vendor's *official* SDK
   (Anthropic, OpenAI, Gemini), not a third-party routing layer.
 - **MCP and A2A wired in**, not bolted on — mount external MCP servers as tools, expose this
-  system's agents over Agent-to-Agent.
+  system's agents over Agent-to-Agent (with bearer-token auth and rate limiting at the edge).
+- **Guarantees, not hopes** — deterministic harness code for error classification, session
+  token budgets, provider retry/timeout/fallback, per-tool circuit breaking, a 100% audit log,
+  and derived `needs_review` flags. The model owns judgment; the harness owns guarantees.
 - **Grounded in a written architecture**, not ad hoc: every module traces back to a specific
   section of [`reference/multi-agent-architecture-notes.md`](reference/multi-agent-architecture-notes.md).
   See [`DESIGN.md`](DESIGN.md) for the map.
@@ -32,18 +35,18 @@ heavyweight framework that owns your control flow. This is neither:
 
 ```mermaid
 flowchart TB
-    User([User]) --> Lead[Lead agent]
-    Lead --> Harness[Harness: auth, validation, scoping, idempotency, depth cap]
-    Harness --> SubA[Subagent A]
-    Harness --> SubB[Subagent B]
-    SubA --> Artifacts[(Artifact store)]
-    SubB --> Artifacts
-    Artifacts --> Lead
-    Lead --> Citation[Citation / synthesis agent]
-    Citation --> User
-    Lead -.-> Trace[(Traces: turn -> agent -> call)]
-    SubA -.-> Trace
-    SubB -.-> Trace
+    User([User / A2A caller]) --> Edge[Auth + rate limit]
+    Edge --> Lead[Lead agent]
+    Lead -->|spawn_subagents| Harness
+    subgraph Harness["Harness — guarantees, every tool call routes through"]
+        Scope[scope] --> Breaker[circuit breaker] --> Idem[idempotency] --> Budgets[budgets] --> Classify[classify / sanitize]
+    end
+    Harness --> SubA[Subagent A] & SubB[Subagent B]
+    Lead & SubA & SubB --> Resilience[[Resilience: timeout · retry · fallback]] --> LLMs[(Anthropic · OpenAI · Gemini)]
+    SubA & SubB --> Artifacts[(Artifact store)] -->|refs| Lead
+    Lead --> Citation[Citation agent] --> User
+    Harness -.->|100%| Audit[(Audit log)]
+    Lead & SubA & SubB -.-> Trace[(Trace spans)]
 ```
 
 Full diagrams (sequence + end-to-end flow chart) are in
@@ -76,15 +79,15 @@ Both examples default to a **mock provider** — no API key required to see the 
 
 | Layer | Purpose |
 |---|---|
-| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs, plus a mock for tests |
-| `harness/` | Validation, per-role tool scoping, idempotency, delegation-depth cap, tool-call budgets |
-| `tools/`, `mcp/` | Typed tool contract; MCP client and server |
-| `agents/` | Lead agent, subagents, citation/synthesis agent |
-| `a2a/` | Agent-to-Agent server and client |
-| `memory/`, `artifacts/` | Durable plan memory, artifact store with lightweight references |
-| `orchestrator/` | Synchronous fan-out/fan-in with circuit breakers and partial-completion policy |
-| `tracing/` | Nested spans (turn → agent → call), OpenTelemetry-compatible |
-| `evals/` | LLM-as-judge with a multi-criteria rubric, CI-runnable |
+| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs + mock; resilience decorator (timeout/retry/fallback) |
+| `harness/` | Guarantees: scoping, idempotency, error classification, budgets, circuit breaker, rate limiting, audit log, boundary guardrail |
+| `tools/`, `mcp/` | Typed tool contract with a classified error envelope; MCP client and server |
+| `agents/` | Lead agent, subagents, citation agent, deterministic `needs_review` derivation |
+| `a2a/` | Agent-to-Agent server (auth + rate limit) and client |
+| `memory/`, `artifacts/` | Plan and artifact stores behind pluggable `PlanStore` / `ArtifactStore` seams |
+| `orchestrator/` | Synchronous fan-out/fan-in; depth + retry breakers; session token budget; partial-completion policy |
+| `tracing/` | Nested spans (turn → agent → call), OTLP export seam, separate 100% audit stream |
+| `evals/` | LLM-as-judge rubric; structural review flags trigger the judge |
 
 Both `typescript/` and `python/` implement every layer, reading shared contracts from
 `specs/`.

@@ -4,9 +4,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLeadAgent } from "../agents/leadAgent.js";
 import { loadConfig } from "../config/index.js";
-import { Harness } from "../harness/index.js";
+import { Harness, RunBudget } from "../harness/index.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
-import { resolveProvider } from "../providers/index.js";
+import { resolveResilientModel } from "../providers/index.js";
 import { buildToolRegistry } from "../tools/registry.js";
 import { Tracer } from "../tracing/tracer.js";
 import { runJudge } from "./judge.js";
@@ -26,7 +26,7 @@ const seedTasks = JSON.parse(readFileSync(seedTasksPath, "utf-8")) as SeedTask[]
  */
 async function main() {
   const config = loadConfig();
-  const model = resolveProvider(config.defaultProvider);
+  const model = resolveResilientModel(config.defaultProvider, config.resilience);
   const harness = new Harness(buildToolRegistry());
 
   let flagged = 0;
@@ -36,6 +36,7 @@ async function main() {
     const tracer = new Tracer(() => {});
     const turnSpan = tracer.startSpan("turn", seed.id);
 
+    const runBudget = new RunBudget(config.caps.maxRunTokens);
     const orchestrator = new Orchestrator({
       model,
       harness,
@@ -45,9 +46,10 @@ async function main() {
       planMemoryDir: resolve(config.artifactStoreDir, "evals", "plans"),
       runId,
       parentSpanId: turnSpan.spanId,
+      runBudget,
     });
 
-    const leadResult = await runLeadAgent({ query: seed.query, model, harness, runtime: orchestrator, tracer, runId, parentSpanId: turnSpan.spanId });
+    const leadResult = await runLeadAgent({ query: seed.query, model, harness, runtime: orchestrator, tracer, runId, parentSpanId: turnSpan.spanId, runBudget });
     tracer.endSpan(turnSpan, "ok");
 
     const traceSummary = `${tracer.allSpans().length} spans, kinds: ${[...new Set(tracer.allSpans().map((s) => s.kind))].join(", ")}`;
@@ -62,8 +64,14 @@ async function main() {
       evalId: `${seed.id}-judge`,
     });
 
-    if (verdict.flag_for_human_review) flagged++;
-    console.log(`[eval] ${seed.id}: ${JSON.stringify(verdict.scores)}${verdict.flag_for_human_review ? " (FLAGGED for human review)" : ""}`);
+    // Triggered review (notes section 16a): the run's own deterministic review flags force a
+    // human-review flag regardless of what the judge concluded - a structural signal (partial
+    // completion, an unrecovered error) is a hard trigger, not a soft opinion.
+    const forced = leadResult.needsReview;
+    const flag = verdict.flag_for_human_review || forced;
+    if (flag) flagged++;
+    const reason = forced ? ` (FLAGGED - structural: ${leadResult.reviewFlags.join(", ")})` : verdict.flag_for_human_review ? " (FLAGGED by judge)" : "";
+    console.log(`[eval] ${seed.id}: ${JSON.stringify(verdict.scores)}${reason}`);
   }
 
   console.log(`\n[eval] ${seedTasks.length} tasks run, ${flagged} flagged for human review.`);

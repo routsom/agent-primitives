@@ -42,12 +42,20 @@
         },
         "error": {
           "type": "object",
-          "description": "Present when status is error or rejected.",
-          "required": ["message"],
+          "description": "Present when status is error or rejected. Classified deterministically by the harness (classifyError) so retry/escalation policy is code-driven, never parsed from a message string. See reference/multi-agent-architecture-notes.md section 12.",
+          "required": ["type", "message", "retryable"],
           "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["transient", "permanent", "validation", "auth"],
+              "description": "transient: timeout/5xx/rate-limit -> bounded auto-retry. permanent: not-found/business-rule -> no retry, final. validation: bad input -> no retry, surface so the model can correct params. auth: credential/permission failure -> no retry, logged as a security event, reason not exposed to the model beyond 'not permitted'."
+            },
             "message": { "type": "string" },
             "code": { "type": "string" },
-            "retryable": { "type": "boolean", "default": false }
+            "retryable": {
+              "type": "boolean",
+              "description": "Derived from type (true only for transient). The orchestrator's retry loop keys off this, not off the message text."
+            }
           }
         }
       }

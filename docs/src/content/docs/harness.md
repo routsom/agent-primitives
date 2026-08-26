@@ -1,28 +1,55 @@
 ---
 title: Harness
-description: The shared infrastructure every agent's tool call routes through - validation, scoping, idempotency, and the two circuit breakers.
+description: The guarantees layer every agent's tool call routes through - scoping, idempotency, classification, budgets, circuit breaking, audit, and the boundary guardrail.
 ---
 
 The harness is the one piece of shared infrastructure every agent - lead, subagent, citation,
 judge - routes every tool call through. There is no agent-to-agent shortcut around it; "another
 agent said so" is never itself an authorization boundary (see
-`reference/multi-agent-architecture-notes.md` section 7).
+`reference/multi-agent-architecture-notes.md` section 7). It is where the boilerplate's central
+principle lives: **the model owns judgment, the harness owns guarantees.**
 
-## What it does
+`Harness.execute` returns a typed `ToolOutcome` (`ok` / `error` / `rejected`) as data - errors
+are classified and returned, never thrown into the agent loop. See
+[Reliability & guarantees](/reliability/) for the full catalogue; this page covers how a call
+flows through it.
 
-1. **Scope check** - a role may only call tools explicitly listed in its
-   `specs/agents/<role>.json` `allowedTools`. A search-only subagent never holds
-   `spawn_subagents` even if the lead agent does.
-2. **Idempotency** - concurrent or repeated tool calls with the same idempotency key resolve to
-   a single in-flight execution, not duplicate side effects.
-3. **Budget enforcement** - two independent circuit breakers:
-   - **Delegation-depth cap** - bounds how many agent-to-agent hops a task can accumulate,
-     rejecting further spawning once exceeded.
-   - **Tool-call budget** - bounds how many tool calls a single agent's own loop can make
-     before it's forced to stop and report partial results.
-4. **Execution** - looks up the tool by name and runs it with a `ToolContext` carrying the
-   calling role, delegation depth, and a narrow `ToolRuntime` interface back into the
-   orchestrator (for `spawn_subagents`, `write_artifact`, `read_artifact`, `save_plan`).
+## The stages of `execute`
+
+1. **Scope check** - a role may only call tools in its `specs/agents/<role>.json` `allowedTools`.
+   A search-only subagent never holds `spawn_subagents` even if the lead agent does. A violation
+   classifies as `auth` (no retry, security-logged).
+2. **Circuit breaker** - if this tool's backend is failing system-wide, short-circuit
+   immediately as transient rather than pile on another timeout.
+3. **Idempotency** - concurrent or repeated calls with the same key resolve to a single
+   in-flight execution, not duplicate side effects.
+4. **Execution** - runs the tool with a `ToolContext` (calling role, delegation depth, and a
+   narrow `ToolRuntime` back into the orchestrator).
+5. **Classify or sanitize** - on failure, classify the error (`transient/permanent/validation/
+   auth`) and record it against the breaker; on success, pass output through the boundary
+   guardrail before returning it to the model.
+6. **Audit** - emit a 100%-coverage, PII-redacted audit record for *every* outcome.
+
+Budgets (per-agent tool-call cap, delegation-depth cap, and the run-wide session token ceiling)
+are enforced around this loop - see [Reliability & guarantees](/reliability/#budgets---three-independent-circuit-breakers).
+
+## Configuring it
+
+```ts
+new Harness(tools, {
+  auditSink: new ConsoleAuditSink(),          // default: silent NoopAuditSink
+  circuitBreaker: { failureThreshold: 5, windowMs: 60000, cooldownMs: 30000 },
+  sanitize: (boundary, content) => content,    // default: identity
+});
+```
+
+```py
+Harness(tools, HarnessOptions(
+    audit_sink=ConsoleAuditSink(),
+    circuit_breaker=CircuitBreakerOptions(failure_threshold=5, window_ms=60000, cooldown_ms=30000),
+    sanitize=my_sanitizer,
+))
+```
 
 ## Validation without a schema library
 

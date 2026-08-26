@@ -1,10 +1,10 @@
 import { runSubagent } from "../agents/subagent.js";
 import type { AgentResult, AgentTask } from "../agents/types.js";
-import { LocalArtifactStore, type ArtifactRef, type WriteArtifactInput } from "../artifacts/store.js";
+import { LocalArtifactStore, type ArtifactRef, type ArtifactStore, type WriteArtifactInput } from "../artifacts/store.js";
 import type { HarnessCaps } from "../config/index.js";
 import { assertDepthWithinCap, assertSubagentCountWithinCap, validateAgentTask } from "../harness/index.js";
-import type { Harness } from "../harness/index.js";
-import { PlanMemory } from "../memory/planMemory.js";
+import type { Harness, RunBudget } from "../harness/index.js";
+import { PlanMemory, type PlanStore } from "../memory/planMemory.js";
 import type { ChatModel } from "../providers/types.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
@@ -20,6 +20,11 @@ export interface OrchestratorOptions {
   parentSpanId?: string | null;
   /** How many times to retry a subagent whose run throws unexpectedly (not tool-level failures, which the model handles itself). */
   subagentRetries?: number;
+  /** Shared session token ceiling. The same instance is passed to the lead and citation agents so the whole run counts against one budget. */
+  runBudget?: RunBudget;
+  /** Override the default local-filesystem stores with your own backend (S3, a database, etc.). */
+  artifactStore?: ArtifactStore;
+  planStore?: PlanStore;
 }
 
 export interface SpawnSubagentsResult {
@@ -34,13 +39,13 @@ export interface SpawnSubagentsResult {
  * present partial results as complete (notes section 9, diagrams section 3).
  */
 export class Orchestrator implements ToolRuntime {
-  private readonly artifactStore: LocalArtifactStore;
-  private readonly planMemory: PlanMemory;
+  private readonly artifactStore: ArtifactStore;
+  private readonly planMemory: PlanStore;
   private readonly subagentRetries: number;
 
   constructor(private readonly opts: OrchestratorOptions) {
-    this.artifactStore = new LocalArtifactStore(opts.artifactStoreDir);
-    this.planMemory = new PlanMemory(opts.planMemoryDir);
+    this.artifactStore = opts.artifactStore ?? new LocalArtifactStore(opts.artifactStoreDir);
+    this.planMemory = opts.planStore ?? new PlanMemory(opts.planMemoryDir);
     this.subagentRetries = opts.subagentRetries ?? 2;
   }
 
@@ -84,10 +89,20 @@ export class Orchestrator implements ToolRuntime {
         tracer: this.opts.tracer,
         parentSpanId: this.opts.parentSpanId ?? null,
         delegationDepth: depth,
+        ...(this.opts.runBudget ? { runBudget: this.opts.runBudget } : {}),
       });
     } catch (error) {
       if (attemptsLeft > 1) return this.runWithRetry(task, depth, attemptsLeft - 1);
-      return { taskId: task.taskId, role: task.role, text: `subagent failed after retries: ${String(error)}`, artifactRefs: [], status: "error" };
+      // A subagent that crashed outright after retries is unambiguously review-worthy.
+      return {
+        taskId: task.taskId,
+        role: task.role,
+        text: `subagent failed after retries: ${String(error)}`,
+        artifactRefs: [],
+        status: "error",
+        needsReview: true,
+        reviewFlags: ["subagent_crashed"],
+      };
     }
   }
 }

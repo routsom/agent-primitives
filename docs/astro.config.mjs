@@ -30,9 +30,10 @@ export default defineConfig({
           items: [
             { label: "Providers (multi-LLM)", link: "/providers/" },
             { label: "Harness", link: "/harness/" },
+            { label: "Reliability & guarantees", link: "/reliability/" },
             { label: "MCP", link: "/mcp/" },
             { label: "A2A", link: "/a2a/" },
-            { label: "Tracing", link: "/tracing/" },
+            { label: "Tracing & audit", link: "/tracing/" },
             { label: "Evals", link: "/evals/" },
           ],
         },
@@ -41,6 +42,7 @@ export default defineConfig({
           items: [
             { label: "Deployment", link: "/deploy/" },
             { label: "Security", link: "/security/" },
+            { label: "Extending it", link: "/extending/" },
           ],
         },
         { label: "Claude Code integration", link: "/claude-code/" },

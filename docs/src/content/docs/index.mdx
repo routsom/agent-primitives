@@ -39,8 +39,13 @@ framework](/architecture/#why-no-orchestration-framework).
 		third-party routing layer. See [Providers](/providers/).
 	</Card>
 	<Card title="MCP and A2A wired in" icon="setting">
-		Mount external MCP servers as tools, expose this system's agents over Agent-to-Agent.
-		See [MCP](/mcp/) and [A2A](/a2a/).
+		Mount external MCP servers as tools, expose this system's agents over Agent-to-Agent -
+		with auth and rate limiting at the edge. See [MCP](/mcp/) and [A2A](/a2a/).
+	</Card>
+	<Card title="Guarantees, not hopes" icon="approve-check">
+		Error classification, session token budgets, provider retry/fallback, per-tool circuit
+		breaking, a 100% audit log, and derived review flags - all deterministic harness code.
+		See [Reliability & guarantees](/reliability/).
 	</Card>
 	<Card title="TypeScript and Python, in parity" icon="seti:typescript">
 		Two independent, fully working reference implementations reading the same shared
@@ -60,14 +65,15 @@ framework](/architecture/#why-no-orchestration-framework).
 
 | Layer | Purpose |
 |---|---|
-| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs, plus a mock for tests |
-| `harness/` | Validation, per-role tool scoping, idempotency, delegation-depth cap, tool-call budgets |
-| `tools/`, `mcp/` | Typed tool contract; MCP client and server |
-| `agents/` | Lead agent, subagents, citation/synthesis agent |
-| `a2a/` | Agent-to-Agent server and client |
-| `memory/`, `artifacts/` | Durable plan memory, artifact store with lightweight references |
-| `orchestrator/` | Synchronous fan-out/fan-in with circuit breakers and partial-completion policy |
-| `tracing/` | Nested spans (turn → agent → call), OpenTelemetry-compatible |
-| `evals/` | LLM-as-judge with a multi-criteria rubric, CI-runnable |
+| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs + a mock; a resilience decorator adds timeout, retry, fallback |
+| `harness/` | The guarantees layer: scoping, idempotency, error classification, budgets, circuit breaker, rate limiting, audit log, boundary guardrail |
+| `tools/`, `mcp/` | Typed tool contract with a classified error envelope; MCP client and server |
+| `agents/` | Lead agent, subagents, citation agent, and deterministic `needs_review` derivation |
+| `a2a/` | Agent-to-Agent server (auth + rate limit) and client |
+| `memory/`, `artifacts/` | Plan and artifact stores behind pluggable `PlanStore` / `ArtifactStore` seams |
+| `orchestrator/` | Synchronous fan-out/fan-in; depth + retry circuit breakers; session token budget; partial-completion policy |
+| `tracing/` | Nested spans (turn → agent → call), OTLP export seam, and a separate 100% audit stream |
+| `evals/` | LLM-as-judge rubric + seed set; structural review flags trigger the judge |
 
 Both `typescript/` and `python/` implement every layer, reading shared contracts from `specs/`.
+See [Reliability & guarantees](/reliability/) for what the harness enforces around the model.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..harness import Harness
+from ..harness import Harness, RunBudget
 from ..providers.types import ChatModel
 from ..tools.types import ToolRuntime
 from ..tracing.tracer import Tracer
@@ -16,6 +16,7 @@ async def run_subagent(
     tracer: Tracer,
     delegation_depth: int,
     parent_span_id: str | None = None,
+    run_budget: RunBudget | None = None,
 ) -> AgentResult:
     extra_system_context = "\n".join(
         [
@@ -38,5 +39,6 @@ async def run_subagent(
             parent_span_id=parent_span_id,
             extra_system_context=extra_system_context,
             max_turns=task.budget["maxToolCalls"] + 2,
+            run_budget=run_budget,
         )
     )

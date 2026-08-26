@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..harness import Harness
+from ..harness import Harness, RunBudget
 from ..providers.types import ChatModel
 from ..tools.types import ToolRuntime
 from ..tracing.tracer import Tracer
@@ -16,6 +16,7 @@ async def run_citation_agent(
     tracer: Tracer,
     run_id: str,
     parent_span_id: str | None = None,
+    run_budget: RunBudget | None = None,
 ) -> AgentResult:
     findings_text = "\n\n".join(
         f"[{f.task_id}] ({f.status}) {f.text}"
@@ -34,5 +35,6 @@ async def run_citation_agent(
             task_id=f"{run_id}-citation",
             delegation_depth=0,
             parent_span_id=parent_span_id,
+            run_budget=run_budget,
         )
     )

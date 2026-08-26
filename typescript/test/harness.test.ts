@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertToolAllowed, assertDepthWithinCap, assertSubagentCountWithinCap, HarnessScopeError, DelegationDepthExceededError, SubagentCountExceededError, ToolCallBudget, ToolCallBudgetExceededError, IdempotencyCache } from "../src/harness/index.js";
+import { assertToolAllowed, assertDepthWithinCap, assertSubagentCountWithinCap, HarnessScopeError, DelegationDepthExceededError, SubagentCountExceededError, ToolCallBudget, ToolCallBudgetExceededError, IdempotencyCache, RunBudget, RunBudgetExceededError } from "../src/harness/index.js";
 
 describe("harness scope", () => {
   it("allows a tool explicitly granted to the role", () => {
@@ -44,5 +44,23 @@ describe("idempotency cache", () => {
     expect(a).toBe("result");
     expect(b).toBe("result");
     expect(calls).toBe(1);
+  });
+});
+
+describe("run budget (session token ceiling)", () => {
+  it("trips once accumulated tokens reach the ceiling", () => {
+    const budget = new RunBudget(100);
+    budget.record({ inputTokens: 40, outputTokens: 30 });
+    expect(budget.isExhausted()).toBe(false);
+    budget.record({ inputTokens: 20, outputTokens: 20 });
+    expect(budget.isExhausted()).toBe(true);
+    expect(() => budget.assertWithinCeiling()).toThrow(RunBudgetExceededError);
+    expect(budget.consumed).toBe(110);
+  });
+
+  it("treats a ceiling of 0 as unlimited", () => {
+    const budget = new RunBudget(0);
+    budget.record({ inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect(budget.isExhausted()).toBe(false);
   });
 });

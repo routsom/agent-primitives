@@ -16,10 +16,15 @@ async def fetch_agent_card(base_url: str) -> dict:
         return response.json()
 
 
-async def delegate_to_remote_agent(base_url: str, task: AgentTask, delegation_depth: int) -> AgentResult:
+async def delegate_to_remote_agent(
+    base_url: str, task: AgentTask, delegation_depth: int, auth_token: str | None = None
+) -> AgentResult:
+    headers = {"authorization": f"Bearer {auth_token}"} if auth_token else {}
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{base_url}/tasks", json={**task.to_schema_dict(), "delegationDepth": delegation_depth}
+            f"{base_url}/tasks",
+            json={**task.to_schema_dict(), "delegationDepth": delegation_depth},
+            headers=headers,
         )
         if response.is_error:
             raise RuntimeError(f"a2a: remote task failed ({response.status_code}): {response.text}")
@@ -30,4 +35,6 @@ async def delegate_to_remote_agent(base_url: str, task: AgentTask, delegation_de
             text=data["text"],
             artifact_refs=data.get("artifact_refs", []),
             status=data["status"],
+            needs_review=data.get("needs_review", False),
+            review_flags=data.get("review_flags", []),
         )

@@ -1,6 +1,7 @@
-"""Local filesystem artifact store (default). Pluggable: implement the same two methods
-against S3/GCS/etc. and swap in orchestrator wiring - callers only ever see an artifact
-reference dict, never a storage-specific type (notes section 4-5)."""
+"""The seam for artifact persistence. LocalArtifactStore is the shipped default; implement the
+same two-method ArtifactStore protocol against S3/GCS/a database and pass it to the orchestrator
+to swap backends (see docs/extending.md). Callers only ever see an artifact reference dict,
+never a storage-specific type (notes section 4-5)."""
 
 from __future__ import annotations
 
@@ -8,9 +9,15 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from ..harness.validate import validate_artifact_ref
+
+
+@runtime_checkable
+class ArtifactStore(Protocol):
+    async def write(self, kind: str, summary: str, content: Any, created_by: str) -> dict: ...
+    async def read(self, artifact_id: str) -> Any: ...
 
 
 class LocalArtifactStore:

@@ -31,6 +31,18 @@ same [harness](/harness/) validation a direct user instruction would. There is n
 - **Least privilege per role**: each role in `specs/agents/` declares its own `allowedTools`,
   `canSpawn`, and `maxDelegationDepth` independently - a role is never implicitly granted
   another role's capabilities.
+- **A2A auth + rate limit**: `a2a/server` authenticates (bearer token) and rate-limits per
+  caller *before* the request body is read or any model runs (notes section 19) - abusive
+  traffic is rejected at near-zero cost.
+- **Auth-error redaction**: an `auth`-classified failure is redacted to "not permitted" before
+  it reaches the model; the real reason is kept only in the audit log (notes section 12), so a
+  probing agent learns nothing about your authorization internals.
+- **100% audit trail**: every tool call is recorded with PII-redacted params at the single
+  harness chokepoint - an independent forensic record, not reliant on what the model claims
+  happened (notes section 11, 22). See [Tracing & audit](/tracing/#the-audit-log).
+- **Boundary guardrail seam**: a deterministic `sanitize` hook runs on tool output before it
+  reaches the model - never an LLM call on the safety path (notes section 8). Ships as identity;
+  wire your rules (see [Extending it](/extending/)).
 
 ## Reporting a vulnerability
 

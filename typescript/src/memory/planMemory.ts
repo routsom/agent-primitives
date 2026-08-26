@@ -2,12 +2,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 /**
- * Persists the lead agent's plan before subagents are spawned, so a context truncation
- * mid-run doesn't lose the strategy (notes section 5). One plan file per run, keyed by
- * runId - a durable job store in production would back this with a database instead of the
- * filesystem, but the interface (save/load by runId) stays the same.
+ * The seam for durable plan storage. `PlanMemory` (local filesystem) is the shipped default;
+ * a production durable-job store would implement this same interface against a database, but
+ * the save/load-by-runId contract stays the same (notes section 5). See docs/extending.md.
  */
-export class PlanMemory {
+export interface PlanStore {
+  save(runId: string, plan: unknown): Promise<void>;
+  load(runId: string): Promise<unknown | undefined>;
+}
+
+/** Local filesystem plan store (default). */
+export class PlanMemory implements PlanStore {
   constructor(private readonly rootDir: string) {}
 
   async save(runId: string, plan: unknown): Promise<void> {

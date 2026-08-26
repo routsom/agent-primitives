@@ -1,5 +1,5 @@
 import type { ChatModel } from "../providers/types.js";
-import type { Harness } from "../harness/index.js";
+import type { Harness, RunBudget } from "../harness/index.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
 import { runAgent } from "./runAgent.js";
@@ -13,6 +13,7 @@ export interface RunCitationAgentParams {
   tracer: Tracer;
   runId: string;
   parentSpanId?: string | null;
+  runBudget?: RunBudget;
 }
 
 export async function runCitationAgent(params: RunCitationAgentParams): Promise<AgentResult> {
@@ -30,5 +31,6 @@ export async function runCitationAgent(params: RunCitationAgentParams): Promise<
     taskId: `${params.runId}-citation`,
     delegationDepth: 0,
     parentSpanId: params.parentSpanId ?? null,
+    ...(params.runBudget ? { runBudget: params.runBudget } : {}),
   });
 }

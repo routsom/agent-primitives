@@ -1,5 +1,5 @@
 import type { ChatModel } from "../providers/types.js";
-import type { Harness } from "../harness/index.js";
+import type { Harness, RunBudget } from "../harness/index.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
 import { runAgent } from "./runAgent.js";
@@ -13,6 +13,7 @@ export interface RunSubagentParams {
   tracer: Tracer;
   parentSpanId?: string | null;
   delegationDepth: number;
+  runBudget?: RunBudget;
 }
 
 export async function runSubagent(params: RunSubagentParams): Promise<AgentResult> {
@@ -34,5 +35,6 @@ export async function runSubagent(params: RunSubagentParams): Promise<AgentResul
     parentSpanId: params.parentSpanId,
     extraSystemContext,
     maxTurns: params.task.budget.maxToolCalls + 2,
+    ...(params.runBudget ? { runBudget: params.runBudget } : {}),
   });
 }

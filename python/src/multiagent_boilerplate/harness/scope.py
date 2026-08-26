@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .errors import AuthFailure
 
-class HarnessScopeError(Exception):
-    pass
+
+class HarnessScopeError(AuthFailure):
+    """A scope violation is an authorization failure - it classifies as `auth` (no retry,
+    security-logged)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 @dataclass

@@ -50,3 +50,7 @@ class AgentResult:
     text: str
     artifact_refs: list[dict] = field(default_factory=list)
     status: Literal["ok", "partial", "error"] = "ok"
+    # Deterministically derived from the run's own trace - NOT an LLM judgment and NOT parsed
+    # from prose (notes section 16a). See agents/review.py.
+    needs_review: bool = False
+    review_flags: list[str] = field(default_factory=list)

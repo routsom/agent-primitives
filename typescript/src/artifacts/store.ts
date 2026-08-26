@@ -21,11 +21,18 @@ export interface WriteArtifactInput {
 }
 
 /**
- * Local filesystem artifact store (default). Pluggable: implement the same two methods
- * against S3/GCS/etc. and swap in orchestrator wiring - callers only ever see an ArtifactRef,
- * never a storage-specific type (notes section 4-5).
+ * The seam for artifact persistence. `LocalArtifactStore` is the shipped default; implement
+ * this same two-method interface against S3/GCS/a database and pass it to the orchestrator to
+ * swap backends (see docs/extending.md). Callers only ever see an ArtifactRef, never a
+ * storage-specific type (notes section 4-5), so nothing above this line changes.
  */
-export class LocalArtifactStore {
+export interface ArtifactStore {
+  write(input: WriteArtifactInput): Promise<ArtifactRef>;
+  read(artifactId: string): Promise<unknown>;
+}
+
+/** Local filesystem artifact store (default). */
+export class LocalArtifactStore implements ArtifactStore {
   constructor(private readonly rootDir: string) {}
 
   async write(input: WriteArtifactInput): Promise<ArtifactRef> {

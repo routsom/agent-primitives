@@ -12,10 +12,17 @@ export async function fetchAgentCard(baseUrl: string): Promise<AgentCard> {
   return (await response.json()) as AgentCard;
 }
 
-export async function delegateToRemoteAgent(baseUrl: string, task: AgentTask, delegationDepth: number): Promise<AgentResult> {
+export async function delegateToRemoteAgent(
+  baseUrl: string,
+  task: AgentTask,
+  delegationDepth: number,
+  authToken?: string,
+): Promise<AgentResult> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (authToken) headers["authorization"] = `Bearer ${authToken}`;
   const response = await fetch(`${baseUrl}/tasks`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify({ ...task, delegationDepth }),
   });
   if (!response.ok) {

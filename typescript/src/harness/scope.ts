@@ -1,3 +1,5 @@
+import { AuthFailure } from "./errors.js";
+
 export interface AgentRoleDef {
   role: string;
   allowedTools: string[];
@@ -19,4 +21,5 @@ export function assertCanSpawn(role: AgentRoleDef, targetRole: string): void {
   }
 }
 
-export class HarnessScopeError extends Error {}
+/** A scope violation is an authorization failure - it classifies as `auth` (no retry, security-logged). */
+export class HarnessScopeError extends AuthFailure {}

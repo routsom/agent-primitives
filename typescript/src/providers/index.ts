@@ -2,10 +2,12 @@ import { AnthropicChatModel } from "./anthropic.js";
 import { GeminiChatModel } from "./gemini.js";
 import { MockChatModel } from "./mock.js";
 import { OpenAIChatModel } from "./openai.js";
+import { ResilientChatModel, type ResilienceOptions } from "./resilient.js";
 import type { ChatModel } from "./types.js";
 
 export * from "./types.js";
-export { AnthropicChatModel, OpenAIChatModel, GeminiChatModel, MockChatModel };
+export { AnthropicChatModel, OpenAIChatModel, GeminiChatModel, MockChatModel, ResilientChatModel };
+export type { ResilienceOptions };
 
 export type ProviderName = "anthropic" | "openai" | "google" | "mock";
 
@@ -35,4 +37,21 @@ export function resolveProvider(name: ProviderName): ChatModel {
     default:
       return new MockChatModel();
   }
+}
+
+/**
+ * Resolves the provider AND wraps it in the resilience decorator (timeout + retry + fallback).
+ * Entry points should use this rather than resolveProvider directly, so every real model call
+ * gets timeout/retry protection. Fallbacks are opt-in via `fallbackProviders` - by default there
+ * are none, to avoid surprising cross-provider calls; add them deliberately when you want
+ * model/region failover (notes section 15).
+ */
+export function resolveResilientModel(
+  name: ProviderName,
+  resilience: ResilienceOptions,
+  fallbackProviders: ProviderName[] = [],
+): ChatModel {
+  const primary = resolveProvider(name);
+  const fallbacks = fallbackProviders.map(resolveProvider);
+  return new ResilientChatModel(primary, { ...resilience, fallbacks });
 }

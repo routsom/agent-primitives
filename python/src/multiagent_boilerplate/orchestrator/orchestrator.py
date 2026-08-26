@@ -11,10 +11,16 @@ from typing import Any
 
 from ..agents.subagent import run_subagent
 from ..agents.types import AgentResult, AgentTask
-from ..artifacts.store import LocalArtifactStore
+from ..artifacts.store import ArtifactStore, LocalArtifactStore
 from ..config import HarnessCaps
-from ..harness import Harness, assert_depth_within_cap, assert_subagent_count_within_cap, validate_agent_task
-from ..memory.plan_memory import PlanMemory
+from ..harness import (
+    Harness,
+    RunBudget,
+    assert_depth_within_cap,
+    assert_subagent_count_within_cap,
+    validate_agent_task,
+)
+from ..memory.plan_memory import PlanMemory, PlanStore
 from ..providers.types import ChatModel
 from ..tracing.tracer import Tracer
 
@@ -30,13 +36,18 @@ class OrchestratorOptions:
     run_id: str
     parent_span_id: str | None = None
     subagent_retries: int = 2
+    # Shared session token ceiling; the same instance is passed to the lead and citation agents.
+    run_budget: RunBudget | None = None
+    # Override the default local-filesystem stores with your own backend (S3, a database, etc.).
+    artifact_store: ArtifactStore | None = None
+    plan_store: PlanStore | None = None
 
 
 class Orchestrator:
     def __init__(self, opts: OrchestratorOptions) -> None:
         self._opts = opts
-        self._artifact_store = LocalArtifactStore(opts.artifact_store_dir)
-        self._plan_memory = PlanMemory(opts.plan_memory_dir)
+        self._artifact_store: ArtifactStore = opts.artifact_store or LocalArtifactStore(opts.artifact_store_dir)
+        self._plan_memory: PlanStore = opts.plan_store or PlanMemory(opts.plan_memory_dir)
 
     async def spawn_subagents(self, raw_tasks: list[dict], depth: int) -> dict[str, Any]:
         assert_subagent_count_within_cap(len(raw_tasks), self._opts.caps.max_subagents)
@@ -77,6 +88,7 @@ class Orchestrator:
                 tracer=self._opts.tracer,
                 delegation_depth=depth,
                 parent_span_id=self._opts.parent_span_id,
+                run_budget=self._opts.run_budget,
             )
         except Exception as error:  # noqa: BLE001 - retried deterministically, then reported as partial
             if attempts_left > 1:
@@ -87,4 +99,6 @@ class Orchestrator:
                 text=f"subagent failed after retries: {error}",
                 artifact_refs=[],
                 status="error",
+                needs_review=True,
+                review_flags=["subagent_crashed"],
             )

@@ -15,17 +15,27 @@ from pathlib import Path
 
 from .a2a.server import A2AServerOptions, start_a2a_server
 from .config import load_config
-from .harness import Harness
+from .harness import ConsoleAuditSink, Harness, HarnessOptions
 from .orchestrator.orchestrator import Orchestrator, OrchestratorOptions
-from .providers import resolve_provider
+from .providers import ResilienceOptions, resolve_resilient_model
 from .tools.registry import build_tool_registry
 from .tracing.tracer import Tracer
 
 
 def main() -> None:
     config = load_config()
-    model = resolve_provider(config.default_provider)
-    harness = Harness(build_tool_registry())
+    model = resolve_resilient_model(
+        config.default_provider,
+        ResilienceOptions(
+            timeout_ms=config.resilience.timeout_ms,
+            max_retries=config.resilience.max_retries,
+            base_delay_ms=config.resilience.base_delay_ms,
+        ),
+    )
+    # Production path: audit every tool call (100% coverage). Swap ConsoleAuditSink for a
+    # JsonlAuditSink or your own sink wired to a log pipeline. Examples leave this as the silent
+    # default (NoopAuditSink) so their trace output stays readable.
+    harness = Harness(build_tool_registry(), HarnessOptions(audit_sink=ConsoleAuditSink()))
     tracer = Tracer()
     port = int(os.environ.get("PORT", "8787"))
     base_url = os.environ.get("BASE_URL", f"http://localhost:{port}")
@@ -51,6 +61,8 @@ def main() -> None:
             runtime=orchestrator,
             tracer=tracer,
             max_delegation_depth=config.caps.max_delegation_depth,
+            auth_token=os.environ.get("A2A_AUTH_TOKEN"),
+            max_run_tokens=config.caps.max_run_tokens,
         )
     )
 

@@ -17,27 +17,102 @@ those notes executable, not just describable.
 
 ## High-level design
 
+Every arrow that carries a tool call passes through the **harness** - the one place that owns
+guarantees (auth, scoping, idempotency, budgets, circuit breaking, audit). Agents own judgment;
+the harness owns what's allowed. Provider calls go through a **resilience** decorator; outputs
+land in **storage**; and two independent observability streams (audit + trace) fall out of the
+same chokepoints.
+
 ```mermaid
 flowchart TB
-    User([User]) --> Lead[Lead agent]
-    Lead --> Harness[Harness: auth, validation, scoping, idempotency, depth cap]
-    Harness --> SubA[Subagent A]
-    Harness --> SubB[Subagent B]
-    SubA --> Artifacts[(Artifact store)]
-    SubB --> Artifacts
-    Artifacts --> Lead
-    Lead --> Citation[Citation / synthesis agent]
-    Citation --> User
-    Lead -.-> Trace[(Traces: turn -> agent -> call)]
-    SubA -.-> Trace
-    SubB -.-> Trace
+    User([User / A2A caller])
+
+    subgraph Edge["Edge - reject early, before any model runs"]
+        direction LR
+        Auth[Auth: bearer token]
+        Rate[Rate limit: sliding window]
+    end
+
+    subgraph Agents["Agent layer - judgment"]
+        direction TB
+        Lead[Lead agent<br/>plan · scale · decide sufficiency]
+        SubA[Subagent A]
+        SubB[Subagent B]
+        Citation[Citation / synthesis agent]
+    end
+
+    subgraph Providers["Provider layer - multi-LLM"]
+        Resilience[[Resilience decorator<br/>timeout · retry · fallback]]
+        Anthropic[Anthropic]
+        OpenAI[OpenAI]
+        Gemini[Gemini]
+        Mock[Mock]
+    end
+
+    subgraph HarnessLayer["Harness - guarantees, every tool call routes through here"]
+        direction TB
+        Scope[Scope check<br/>least privilege per role]
+        Breaker[Tool circuit breaker]
+        Idem[Idempotency]
+        Budgets[Budgets<br/>tool-call · delegation depth · session tokens]
+        Classify[Error classification<br/>transient · permanent · validation · auth]
+        Sanitize[Boundary guardrail]
+    end
+
+    subgraph Storage["Storage - refs, not blobs"]
+        Artifacts[(Artifact store)]
+        PlanMem[(Plan memory)]
+    end
+
+    subgraph Obs["Observability - two streams, shared IDs"]
+        Audit[(Audit log<br/>100% · PII-redacted)]
+        Trace[(Trace spans<br/>turn → agent → call · sampled)]
+    end
+
+    User --> Edge --> Lead
+    Lead -->|spawn_subagents| HarnessLayer
+    HarnessLayer --> SubA & SubB
+    Lead & SubA & SubB --> Resilience
+    Resilience --> Anthropic & OpenAI & Gemini & Mock
+    SubA & SubB -->|tool calls| HarnessLayer
+    HarnessLayer --> Artifacts
+    Lead -->|save plan before spawning| PlanMem
+    Artifacts -->|lightweight refs| Lead
+    Lead --> Citation --> User
+    HarnessLayer -.->|every call| Audit
+    Lead & SubA & SubB & Citation -.-> Trace
 ```
 
 The harness is shared infrastructure, not duplicated per agent - every agent's tool calls pass
-through the same auth/validation/idempotency/delegation-depth checks. Subagents write large
-outputs to the artifact store and hand the lead agent a lightweight reference, not the raw
-content. The full sequence diagram and end-to-end flow chart live in
-`reference/multi-agent-system-diagrams.md`.
+through the same checks. Subagents write large outputs to the artifact store and hand the lead
+agent a lightweight reference, not the raw content. See [Reliability & guarantees](/reliability/)
+for what each harness stage enforces, and `reference/multi-agent-system-diagrams.md` for the
+original companion diagrams.
+
+## A tool call's path through the harness
+
+This is the deterministic gauntlet every tool call runs - the model requests a call, the harness
+decides whether and how it happens, and returns a typed outcome (never throws into the loop):
+
+```mermaid
+flowchart TB
+    Start([Agent requests a tool call]) --> Scope{Role allowed<br/>this tool?}
+    Scope -->|no| RejAuth[reject · auth<br/>redacted to the model,<br/>real reason to audit]
+    Scope -->|yes| Known{Tool exists?}
+    Known -->|no| RejVal[reject · validation]
+    Known -->|yes| Breaker{Circuit open<br/>for this tool?}
+    Breaker -->|yes| RejTrans[reject · transient]
+    Breaker -->|no| Idem{Seen this<br/>idempotency key?}
+    Idem -->|yes| Dedup[return the in-flight result]
+    Idem -->|no| Exec[execute tool]
+    Exec --> Ok{Threw?}
+    Ok -->|no| San[sanitize output at boundary] --> RecOk[record success] --> OutOk([ok + output])
+    Ok -->|yes| ClassifyErr[classify error<br/>transient/permanent/validation/auth] --> RecFail[record failure<br/>trip breaker if rate spikes] --> OutErr([error + typed reason])
+    RejAuth & RejVal & RejTrans & Dedup & OutOk & OutErr --> Audit[[audit every outcome · 100%]]
+```
+
+Retryability is *derived from the classified type* (only transient retries), so the orchestrator's
+retry loop keys off a structured field - never a regex on an error string.
 
 ## Why no orchestration framework
 
@@ -54,15 +129,15 @@ becomes a second dependency to trust.
 
 | Module | Notes section | Responsibility |
 |---|---|---|
-| `providers/` | - | One `ChatModel` interface over each vendor's official SDK; normalizes messages, tool calls, usage, streaming |
-| `harness/` | §6, §7, §8 | Validation, per-role tool scoping, idempotency, delegation-depth cap, tool-call budgets - every agent routes through it, no shortcuts |
-| `tools/`, `mcp/` | §6 | Typed tool contract; MCP client (mount external servers as tools) and MCP server (expose this system's tools) |
-| `agents/` | §3, §9 | `LeadAgent` (plan, scale subagent count to complexity, judge sufficiency), `Subagent` (isolated context, distill, return a reference), `CitationAgent` (synthesis) |
-| `a2a/` | §7 | Agent-to-Agent server/client; inbound A2A tasks pass through the same harness as any other instruction |
-| `memory/`, `artifacts/` | §5 | Plan persisted before spawning; phase summaries; artifact store returns lightweight refs, not raw blobs |
-| `orchestrator/` | §2, §9 | Synchronous fan-out/fan-in; two circuit breakers (depth, retries); explicit partial-completion policy |
-| `tracing/` | §11 | Nested spans: turn → agent → model/tool call; OpenTelemetry-compatible export |
-| `evals/` | §10 | LLM-as-judge, multi-criteria rubric, small seed set, runnable in CI |
+| `providers/` | §15 | One `ChatModel` interface over each vendor's official SDK; a `ResilientChatModel` decorator adds timeout, retry, and fallback |
+| `harness/` | §6-§8, §12, §19, §22 | The guarantees layer: scoping, idempotency, budgets, **error classification**, **per-tool circuit breaker**, **rate limiting**, **audit log**, **boundary guardrail** - every agent routes through it, no shortcuts |
+| `tools/`, `mcp/` | §6, §9 | Typed tool contract with a classified error envelope; MCP client and server |
+| `agents/` | §3, §9, §16a | `LeadAgent`, `Subagent`, `CitationAgent`, plus **deterministic `needs_review` derivation** from the trace |
+| `a2a/` | §7, §19 | Agent-to-Agent server/client; inbound tasks pass through auth + rate limit + the same harness as any local call |
+| `memory/`, `artifacts/` | §5 | Plan persisted before spawning; `PlanStore` / `ArtifactStore` seams (local FS default, pluggable) |
+| `orchestrator/` | §2, §9, §15 | Synchronous fan-out/fan-in; circuit breakers (depth, retries); **session-level token budget**; partial-completion policy |
+| `tracing/` | §11, §12, §18, §22 | Nested spans (turn → agent → call); OTLP export seam; **audit stream kept separate from the eval trace** |
+| `evals/` | §10, §16 | LLM-as-judge rubric + seed set; **structural review flags trigger the judge**, they don't wait on it |
 
 ## Topology
 

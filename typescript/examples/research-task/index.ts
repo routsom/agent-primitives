@@ -3,9 +3,9 @@ import { resolve } from "node:path";
 import { runLeadAgent } from "../../src/agents/leadAgent.js";
 import { runCitationAgent } from "../../src/agents/citationAgent.js";
 import { loadConfig } from "../../src/config/index.js";
-import { Harness } from "../../src/harness/index.js";
+import { Harness, RunBudget } from "../../src/harness/index.js";
 import { Orchestrator } from "../../src/orchestrator/orchestrator.js";
-import { resolveProvider } from "../../src/providers/index.js";
+import { resolveResilientModel } from "../../src/providers/index.js";
 import { buildToolRegistry } from "../../src/tools/registry.js";
 import { Tracer } from "../../src/tracing/tracer.js";
 
@@ -19,13 +19,15 @@ import { Tracer } from "../../src/tracing/tracer.js";
 async function main() {
   const config = loadConfig();
   const runId = randomUUID();
-  const model = resolveProvider(config.defaultProvider);
+  const model = resolveResilientModel(config.defaultProvider, config.resilience);
   const tracer = new Tracer();
   const harness = new Harness(buildToolRegistry());
 
   console.log(`[research-task] run ${runId} using provider "${model.provider}" (${model.model})`);
 
   const turnSpan = tracer.startSpan("turn", "research-task");
+  // One shared token ceiling for the whole run - lead + every subagent + citation count against it.
+  const runBudget = new RunBudget(config.caps.maxRunTokens);
 
   const orchestrator = new Orchestrator({
     model,
@@ -36,6 +38,7 @@ async function main() {
     planMemoryDir: resolve(config.artifactStoreDir, "plans"),
     runId,
     parentSpanId: turnSpan.spanId,
+    runBudget,
   });
 
   const query = "What are the main tradeoffs between orchestrator-worker and sequential-pipeline multi-agent topologies?";
@@ -48,6 +51,7 @@ async function main() {
     tracer,
     runId,
     parentSpanId: turnSpan.spanId,
+    runBudget,
   });
 
   console.log("\n[lead agent result]");
@@ -63,13 +67,14 @@ async function main() {
     tracer,
     runId,
     parentSpanId: turnSpan.spanId,
+    runBudget,
   });
 
   tracer.endSpan(turnSpan, "ok");
 
   console.log("\n[citation agent result]");
   console.log(citationResult.text);
-  console.log(`\n[research-task] done. ${tracer.allSpans().length} spans recorded.`);
+  console.log(`\n[research-task] done. ${tracer.allSpans().length} spans recorded, ${runBudget.consumed} tokens spent (ceiling ${config.caps.maxRunTokens || "unlimited"}).`);
 }
 
 main().catch((error) => {
