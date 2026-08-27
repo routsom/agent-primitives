@@ -1,6 +1,6 @@
 # Build context must be the repository root (not python/), since specs/ and reference/ are
 # read at runtime and must ship alongside the runtime:
-#   docker build -f deploy/Dockerfile.python -t multiagent-boilerplate-py .
+#   docker build -f deploy/Dockerfile.python -t agent-primitives-py .
 #
 # Default CMD starts multiagent_boilerplate.server's A2A server (exposes the subagent role).
 # Swap it for your own entrypoint - e.g. an HTTP API wrapping run_lead_agent - by overriding

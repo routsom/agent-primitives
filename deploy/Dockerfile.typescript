@@ -1,6 +1,6 @@
 # Build context must be the repository root (not typescript/), since specs/ and reference/
 # are read at runtime and must ship alongside the compiled runtime:
-#   docker build -f deploy/Dockerfile.typescript -t multiagent-boilerplate-ts .
+#   docker build -f deploy/Dockerfile.typescript -t agent-primitives-ts .
 #
 # Default CMD starts src/server.ts's A2A server (exposes the subagent role). Swap it for your
 # own entrypoint - e.g. an HTTP API wrapping runLeadAgent - by overriding CMD at run time or
