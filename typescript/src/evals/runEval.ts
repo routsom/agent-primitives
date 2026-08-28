@@ -9,6 +9,8 @@ import { Orchestrator } from "../orchestrator/orchestrator.js";
 import { resolveResilientModel } from "../providers/index.js";
 import { buildToolRegistry } from "../tools/registry.js";
 import { Tracer } from "../tracing/tracer.js";
+import { maybeOpen, writeDashboard, type EvalRecord } from "../tracing/dashboard.js";
+import { startDashboardServer } from "../tracing/dashboardServer.js";
 import { runJudge } from "./judge.js";
 
 interface SeedTask {
@@ -28,6 +30,16 @@ async function main() {
   const config = loadConfig();
   const model = resolveResilientModel(config.defaultProvider, config.resilience);
   const harness = new Harness(buildToolRegistry());
+
+  // Profiler: a live eval dashboard (PROFILER=live) streams each judge verdict as it lands;
+  // otherwise a static eval dashboard is written and opened at the end.
+  const live = process.env["PROFILER"] === "live";
+  const server = live ? startDashboardServer({ meta: { title: "Eval suite" }, port: Number(process.env["PROFILER_PORT"] ?? 8790) }) : undefined;
+  if (server) {
+    console.log(`[eval] ⚡ live eval dashboard → ${server.url} (Ctrl-C to exit)`);
+    maybeOpen(server.url);
+  }
+  const records: EvalRecord[] = [];
 
   let flagged = 0;
 
@@ -72,9 +84,36 @@ async function main() {
     if (flag) flagged++;
     const reason = forced ? ` (FLAGGED - structural: ${leadResult.reviewFlags.join(", ")})` : verdict.flag_for_human_review ? " (FLAGGED by judge)" : "";
     console.log(`[eval] ${seed.id}: ${JSON.stringify(verdict.scores)}${reason}`);
+
+    const record: EvalRecord = {
+      taskId: seed.id,
+      scores: verdict.scores as unknown as Record<string, number>,
+      flagForHumanReview: verdict.flag_for_human_review,
+      structuralFlags: leadResult.reviewFlags,
+    };
+    records.push(record);
+    if (server) {
+      server.pushEval(record);
+      if (live) await new Promise((r) => setTimeout(r, 700)); // pace so the live view is watchable
+    }
   }
 
   console.log(`\n[eval] ${seedTasks.length} tasks run, ${flagged} flagged for human review.`);
+
+  if (server) {
+    server.done();
+    console.log("[eval] run complete - dashboard still live. Press Ctrl-C to exit.");
+    process.on("SIGINT", () => {
+      server.close();
+      process.exit(0);
+    });
+    await new Promise(() => {});
+    return;
+  }
+
+  const dashPath = writeDashboard([], resolve(config.artifactStoreDir, "evals", "eval-dashboard.html"), { title: "Eval suite" }, records);
+  console.log(`[eval] eval dashboard → ${dashPath}`);
+  maybeOpen(dashPath);
 }
 
 main().catch((error) => {

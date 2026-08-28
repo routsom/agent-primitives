@@ -49,6 +49,27 @@ PROFILER=live uv run python -m examples.research_task   # Python
 The page subscribes over SSE when served live and falls back to the embedded snapshot when
 opened as a file - the same HTML either way.
 
+## Live eval dashboard
+
+The same dashboard renders an **Evals** section from LLM-as-judge verdicts: a radar of the
+average score per rubric criterion (accuracy · completeness · source quality · process ·
+disclosure), summary cards (tasks judged · average · pass rate · flagged), and a **per-task
+score heatmap** with review flags. It fills row-by-row in real time as each task is judged.
+
+![agent-primitives eval dashboard](/agent-primitives/eval-dashboard.png)
+
+```bash
+npm run eval             # writes a static eval dashboard and opens it
+npm run eval:profile     # live: each task's judge scores stream in as they land
+# Python: uv run python -m multiagent_boilerplate.evals.run_eval
+#   live: PROFILER=live uv run python -m multiagent_boilerplate.evals.run_eval
+```
+
+The structural review flags a run derives deterministically ([notes §16a](/evals/)) show up in
+the heatmap's Review column - so a run that hid a dead end or truncated is flagged even when the
+judge scored it well. A run that is itself judged also shows its single verdict on its own run
+dashboard.
+
 ## Dollar cost
 
 Cost is derived deterministically from the token counts each span carries, using the editable

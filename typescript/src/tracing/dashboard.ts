@@ -12,9 +12,22 @@ import type { TraceSpan } from "./tracer.js";
  */
 export interface DashboardMeta {
   runId?: string;
+  title?: string;
   tokenBudget?: number;
   costBudget?: number;
   live?: boolean;
+}
+
+/**
+ * One LLM-judge verdict for a task (evals/), linked to its run by taskId. Rendered in the
+ * dashboard's Evals section as a per-criterion heatmap + averaged radar. `structuralFlags` are
+ * the deterministic review flags the run itself produced (notes section 16a).
+ */
+export interface EvalRecord {
+  taskId: string;
+  scores: Record<string, number>;
+  flagForHumanReview: boolean;
+  structuralFlags: string[];
 }
 
 export const PAYLOAD_SENTINEL = "%%AGENT_PRIMITIVES_PAYLOAD%%";
@@ -25,17 +38,22 @@ export function readTemplate(): string {
 }
 
 /** Builds the full dashboard HTML by injecting the run payload at the single sentinel. */
-export function renderDashboard(spans: readonly TraceSpan[], meta: DashboardMeta = {}): string {
+export function renderDashboard(spans: readonly TraceSpan[], meta: DashboardMeta = {}, evals: readonly EvalRecord[] = []): string {
   // Embed as JSON in a <script type="application/json"> tag; escape `<` so a stray "</script>"
   // in span data can never break out of the tag.
-  const json = JSON.stringify({ meta, spans }).replace(/</g, "\\u003c");
+  const json = JSON.stringify({ meta, spans, evals }).replace(/</g, "\\u003c");
   // Use a function replacement so `$` sequences in the JSON aren't treated as special.
   return readTemplate().replace(PAYLOAD_SENTINEL, () => json);
 }
 
-export function writeDashboard(spans: readonly TraceSpan[], outFile: string, meta: DashboardMeta = {}): string {
+export function writeDashboard(
+  spans: readonly TraceSpan[],
+  outFile: string,
+  meta: DashboardMeta = {},
+  evals: readonly EvalRecord[] = [],
+): string {
   mkdirSync(dirname(outFile), { recursive: true });
-  writeFileSync(outFile, renderDashboard(spans, meta), "utf-8");
+  writeFileSync(outFile, renderDashboard(spans, meta, evals), "utf-8");
   return outFile;
 }
 

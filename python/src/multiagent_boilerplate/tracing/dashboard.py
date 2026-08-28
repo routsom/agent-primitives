@@ -21,18 +21,22 @@ def read_template() -> str:
     return (REPO_ROOT / "dashboard" / "template.html").read_text(encoding="utf-8")
 
 
-def render_dashboard(spans: list[TraceSpan], meta: dict | None = None) -> str:
-    """Builds the full dashboard HTML by injecting the run payload at the single sentinel."""
-    payload = {"meta": meta or {}, "spans": [s.to_schema_dict() for s in spans]}
+def render_dashboard(spans: list[TraceSpan], meta: dict | None = None, evals: list[dict] | None = None) -> str:
+    """Builds the full dashboard HTML by injecting the run payload at the single sentinel.
+    `evals` is a list of LLM-judge verdict dicts (taskId, scores, flagForHumanReview,
+    structuralFlags), rendered in the dashboard's Evals section."""
+    payload = {"meta": meta or {}, "spans": [s.to_schema_dict() for s in spans], "evals": evals or []}
     # Escape `<` so a stray "</script>" in span data can't break out of the tag.
     json_text = json.dumps(payload).replace("<", "\\u003c")
     return read_template().replace(PAYLOAD_SENTINEL, json_text)
 
 
-def write_dashboard(spans: list[TraceSpan], out_file: str, meta: dict | None = None) -> str:
+def write_dashboard(
+    spans: list[TraceSpan], out_file: str, meta: dict | None = None, evals: list[dict] | None = None
+) -> str:
     path = Path(out_file)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_dashboard(spans, meta), encoding="utf-8")
+    path.write_text(render_dashboard(spans, meta, evals), encoding="utf-8")
     return str(path)
 
 

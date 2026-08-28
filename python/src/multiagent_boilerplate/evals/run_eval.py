@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from ..harness import Harness, RunBudget
 from ..orchestrator.orchestrator import Orchestrator, OrchestratorOptions
 from ..providers import ResilienceOptions, resolve_resilient_model
 from ..tools.registry import build_tool_registry
+from ..tracing.dashboard import maybe_open, write_dashboard
+from ..tracing.dashboard_server import start_dashboard_server
 from ..tracing.tracer import Tracer
 from .judge import run_judge
 
@@ -33,6 +36,16 @@ async def main() -> None:
     )
     harness = Harness(build_tool_registry())
     seed_tasks = json.loads(SEED_TASKS_PATH.read_text(encoding="utf-8"))
+
+    # Profiler: a live eval dashboard (PROFILER=live) streams each judge verdict as it lands;
+    # otherwise a static eval dashboard is written and opened at the end.
+    live = os.environ.get("PROFILER") == "live"
+    server = None
+    if live:
+        server = start_dashboard_server(meta={"title": "Eval suite"}, port=int(os.environ.get("PROFILER_PORT", "8790")))
+        print(f"[eval] ⚡ live eval dashboard → {server.url} (Ctrl-C to exit)")
+        maybe_open(server.url)
+    records: list[dict] = []
 
     flagged = 0
 
@@ -97,7 +110,37 @@ async def main() -> None:
             flag_note = ""
         print(f"[eval] {seed['id']}: {json.dumps(verdict['scores'])}{flag_note}")
 
+        record = {
+            "taskId": seed["id"],
+            "scores": verdict["scores"],
+            "flagForHumanReview": bool(verdict.get("flag_for_human_review")),
+            "structuralFlags": lead_result.review_flags,
+        }
+        records.append(record)
+        if server is not None:
+            server.push_eval(record)
+            if live:
+                await asyncio.sleep(0.7)  # pace so the live view is watchable
+
     print(f"\n[eval] {len(seed_tasks)} tasks run, {flagged} flagged for human review.")
+
+    if server is not None:
+        server.done()
+        print("[eval] run complete - dashboard still live. Press Ctrl-C to exit.")
+        try:
+            await asyncio.Event().wait()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            server.close()
+        return
+
+    dash_path = write_dashboard(
+        [],
+        str(Path(config.artifact_store_dir) / "evals" / "eval-dashboard.html"),
+        meta={"title": "Eval suite"},
+        evals=records,
+    )
+    print(f"[eval] eval dashboard → {dash_path}")
+    maybe_open(dash_path)
 
 
 if __name__ == "__main__":

@@ -71,3 +71,19 @@ def test_dashboard_escapes_script_break() -> None:
     data_part = html.split("ap-payload", 1)[1][:2000]
     assert "</script><script>alert" not in data_part
     assert "\\u003c" in html
+
+
+def test_dashboard_embeds_eval_records() -> None:
+    evals = [
+        {
+            "taskId": "t1",
+            "scores": {"accuracy": 4, "completeness": 4, "source_quality": 3, "process": 4, "disclosure": 5},
+            "flagForHumanReview": False,
+            "structuralFlags": [],
+        }
+    ]
+    html = render_dashboard([], meta={"title": "Eval suite"}, evals=evals)
+    assert '"evals"' in html
+    assert "t1" in html
+    assert '"source_quality": 3' in html
+    assert "Eval suite" in html

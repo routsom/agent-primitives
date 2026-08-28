@@ -68,4 +68,15 @@ describe("dashboard render", () => {
     expect(dataPart.slice(0, 2000)).not.toContain("</script><script>alert");
     expect(html).toContain("\\u003c");
   });
+
+  it("embeds eval records for the Evals section", () => {
+    const evals = [
+      { taskId: "t1", scores: { accuracy: 4, completeness: 4, source_quality: 3, process: 4, disclosure: 5 }, flagForHumanReview: false, structuralFlags: [] },
+    ];
+    const html = renderDashboard([], { title: "Eval suite" }, evals);
+    expect(html).toContain('"evals"');
+    expect(html).toContain("t1");
+    expect(html).toContain('"source_quality":3');
+    expect(html).toContain("Eval suite");
+  });
 });

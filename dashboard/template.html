@@ -105,6 +105,25 @@
       .legend .li { display: flex; align-items: center; gap: 6px; } .legend .dot { width: 9px; height: 9px; border-radius: 2px; }
       .foot { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
       .empty { color: var(--faint); padding: 40px 18px; text-align: center; }
+
+      /* Evals */
+      .evals-top { display: grid; grid-template-columns: 300px 1fr; gap: 1px; background: var(--border); margin-top: 14px; border-top: 1px solid var(--border); }
+      .evals-radar { background: var(--panel); padding: 12px 18px; display: flex; align-items: center; justify-content: center; }
+      .evals-cards { background: var(--panel); display: grid; grid-template-columns: repeat(4, 1fr); }
+      .evals-cards .card { padding: 14px 18px; border-left: 1px solid var(--border); }
+      .evals-cards .card:first-child { border-left: none; }
+      .evals-cards .v.good { color: var(--green); } .evals-cards .v.warn { color: var(--orange); }
+      .heat { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .heat th { text-align: center; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; padding: 10px 6px; border-bottom: 1px solid var(--border); }
+      .heat th.task { text-align: left; padding-left: 18px; width: 30%; }
+      .heat td { padding: 0; border-bottom: 1px solid #15151a; height: 34px; }
+      .heat td.task { padding-left: 18px; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+      .heat td.task .fl { color: var(--orange); font-size: 10px; margin-left: 8px; }
+      .heat td.cell { text-align: center; }
+      .heat td.cell .box { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 22px; border-radius: 4px; font-family: var(--mono); font-size: 12px; font-weight: 600; color: #0c0c0f; transition: background 0.4s; }
+      .heat tr:hover td { background: #14141a; }
+      .flagchip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-family: var(--mono); border: 1px solid color-mix(in oklab, var(--orange), transparent 55%); color: var(--orange); }
+      .radar-lbl { font-size: 10px; fill: var(--muted); font-family: var(--ui); }
     </style>
   </head>
   <body>
@@ -123,8 +142,10 @@
       const KIND_COLOR = { turn: "#3a3a44", agent: "#0a84ff", model_call: "#32d74b", tool_call: "#ff9f0a", a2a_call: "#40c8e0" };
       const AGENT_COLORS = ["#0a84ff", "#bf5af2", "#40c8e0", "#ff6482", "#ffd60a", "#32d74b", "#ff9f0a"];
 
-      let META = {}, SPANS = [], selectedId = null;
-      try { const p = JSON.parse(document.getElementById("ap-payload").textContent); META = p.meta || {}; SPANS = p.spans || []; } catch (e) {}
+      let META = {}, SPANS = [], EVALS = [], selectedId = null;
+      try { const p = JSON.parse(document.getElementById("ap-payload").textContent); META = p.meta || {}; SPANS = p.spans || []; EVALS = p.evals || []; } catch (e) {}
+      const CRITERIA_ORDER = ["accuracy", "completeness", "source_quality", "process", "disclosure"];
+      const CRIT_LABEL = { accuracy: "Accuracy", completeness: "Complete", source_quality: "Sources", process: "Process", disclosure: "Disclosure" };
 
       const ms = (s) => new Date(s).getTime();
       const dur = (s) => (s.endedAt ? ms(s.endedAt) : ms(s.startedAt)) - ms(s.startedAt);
@@ -177,6 +198,70 @@
           <path d="${d}" fill="url(#ag${color.replace('#','')})" stroke="${color}" stroke-width="1.5"/></svg>`;
       }
 
+      // Score 1..5 -> red→green (the eval heatmap / radar palette).
+      const SCORE_STOPS = ["#ff453a", "#ff9f0a", "#ffd60a", "#7bd66a", "#32d74b"];
+      function scoreColor(v) { return SCORE_STOPS[Math.max(1, Math.min(5, Math.round(v))) - 1]; }
+
+      // Radar (spider) chart of average score per criterion, on a 0..5 scale.
+      function radar(labels, values) {
+        const cx = 110, cy = 108, R = 78, n = labels.length, MAX = 5;
+        const ang = (i) => (-90 + (360 / n) * i) * Math.PI / 180;
+        const at = (i, r) => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
+        let grid = "";
+        for (let ring = 1; ring <= MAX; ring++) {
+          const pts = labels.map((_, i) => at(i, (ring / MAX) * R).map((x) => x.toFixed(1)).join(",")).join(" ");
+          grid += `<polygon points="${pts}" fill="none" stroke="#26262d" stroke-width="1"/>`;
+        }
+        let axes = "", lbls = "";
+        labels.forEach((lb, i) => {
+          const [ex, ey] = at(i, R);
+          axes += `<line x1="${cx}" y1="${cy}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="#26262d" stroke-width="1"/>`;
+          const [lx, ly] = at(i, R + 14);
+          const anchor = Math.abs(lx - cx) < 6 ? "middle" : lx > cx ? "start" : "end";
+          lbls += `<text class="radar-lbl" x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}" text-anchor="${anchor}">${lb}</text>`;
+        });
+        const dpts = values.map((v, i) => at(i, (Math.max(0, Math.min(MAX, v)) / MAX) * R).map((x) => x.toFixed(1)).join(",")).join(" ");
+        const dots = values.map((v, i) => { const [x, y] = at(i, (Math.max(0, Math.min(MAX, v)) / MAX) * R); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="#0a84ff"/>`; }).join("");
+        return `<svg width="300" height="220" viewBox="-46 0 300 220">${grid}${axes}<polygon points="${dpts}" fill="rgba(10,132,255,0.22)" stroke="#0a84ff" stroke-width="1.8"/>${dots}${lbls}</svg>`;
+      }
+
+      function renderEvals() {
+        if (!EVALS.length) return "";
+        // Criteria = known order first, then any extra keys seen.
+        const seen = new Set();
+        EVALS.forEach((e) => Object.keys(e.scores || {}).forEach((k) => seen.add(k)));
+        const crit = [...CRITERIA_ORDER.filter((k) => seen.has(k)), ...[...seen].filter((k) => !CRITERIA_ORDER.includes(k))];
+        const avgOf = (k) => { const vs = EVALS.map((e) => e.scores[k]).filter((v) => typeof v === "number"); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0; };
+        const critAvg = crit.map(avgOf);
+        const allVals = EVALS.flatMap((e) => crit.map((k) => e.scores[k]).filter((v) => typeof v === "number"));
+        const overall = allVals.length ? allVals.reduce((a, b) => a + b, 0) / allVals.length : 0;
+        const passed = EVALS.filter((e) => crit.every((k) => (e.scores[k] ?? 0) >= 3)).length;
+        const flagged = EVALS.filter((e) => e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length)).length;
+
+        const cards = [
+          { k: "Tasks judged", v: String(EVALS.length) },
+          { k: "Avg score", v: overall.toFixed(1) + " / 5", cls: overall >= 4 ? "good" : overall >= 3 ? "" : "warn" },
+          { k: "Pass rate", v: Math.round((passed / EVALS.length) * 100) + "%", cls: passed === EVALS.length ? "good" : "warn", sub: passed + " / " + EVALS.length + " all ≥ 3" },
+          { k: "Flagged", v: String(flagged), cls: flagged ? "warn" : "good" },
+        ];
+        const head = `<tr><th class="task">Task</th>${crit.map((k) => `<th>${CRIT_LABEL[k] || esc(k)}</th>`).join("")}<th>Review</th></tr>`;
+        const body = EVALS.map((e) => {
+          const cells = crit.map((k) => { const v = e.scores[k]; return `<td class="cell">${typeof v === "number" ? `<span class="box" style="background:${scoreColor(v)}">${v}</span>` : "·"}</td>`; }).join("");
+          const flags = (e.structuralFlags && e.structuralFlags.length) ? `<span class="fl">${esc(e.structuralFlags.join(", "))}</span>` : "";
+          const chip = e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length) ? `<span class="flagchip">review</span>` : "";
+          return `<tr><td class="task">${esc(e.taskId)}${flags}</td>${cells}<td class="cell">${chip}</td></tr>`;
+        }).join("");
+
+        return `<div class="section">
+          <h2>Evals · LLM-as-judge · ${EVALS.length} judged</h2>
+          <div class="evals-top">
+            <div class="evals-radar">${radar(crit.map((k) => CRIT_LABEL[k] || k), critAvg)}</div>
+            <div class="evals-cards">${cards.map((c) => `<div class="card"><div class="k">${c.k}</div><div class="v ${c.cls || ""}">${c.v}</div>${c.sub ? `<div class="sub">${c.sub}</div>` : '<div class="sub">&nbsp;</div>'}</div>`).join("")}</div>
+          </div>
+          <table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table>
+        </div>`;
+      }
+
       // Clean display name: "lead:<uuid>" -> "lead", "citation:<uuid>-citation" -> "citation",
       // "subagent:sub-1" -> "sub-1". Strips the run/task UUID so labels stay short.
       function agentKey(s) {
@@ -189,7 +274,20 @@
 
       function render() {
         const content = document.getElementById("content");
-        if (!SPANS.length) { content.innerHTML = '<div class="empty">Waiting for spans…</div>'; return; }
+        const hasRun = SPANS.length > 0;
+        if (!hasRun && !EVALS.length) { content.innerHTML = '<div class="empty">Waiting for data…</div>'; return; }
+        document.getElementById("live").className = "live" + (META.live ? " on" : "");
+
+        if (!hasRun) {
+          // Eval-only dashboard (the eval suite): show the judge matrices, no run trace.
+          const flagged = EVALS.filter((e) => e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length)).length;
+          document.getElementById("runid").textContent = META.title || "eval suite";
+          document.getElementById("durpill").textContent = EVALS.length + " tasks judged";
+          const sp = document.getElementById("statuspill"); sp.textContent = flagged ? "review" : "ok"; sp.className = "pill " + (flagged ? "partial" : "ok");
+          content.innerHTML = renderEvals();
+          return;
+        }
+
         const t0 = Math.min(...SPANS.map((s) => ms(s.startedAt)));
         const t1 = Math.max(...SPANS.map((s) => (s.endedAt ? ms(s.endedAt) : ms(s.startedAt))));
         const total = Math.max(1, t1 - t0);
@@ -208,7 +306,6 @@
         document.getElementById("runid").textContent = (META.runId || SPANS[0].traceId || "").slice(0, 8);
         const dp = document.getElementById("durpill"); dp.textContent = fmtDur(total) + " · " + SPANS.length + " spans";
         const sp = document.getElementById("statuspill"); sp.textContent = runStatus; sp.className = "pill " + runStatus;
-        document.getElementById("live").className = "live" + (META.live ? " on" : "");
 
         // token distribution by agent (group model_call by parent agent span)
         const byId = new Map(SPANS.map((s) => [s.spanId, s]));
@@ -226,7 +323,7 @@
         let ct = 0, cc = 0; const tokSeries = evs.map((e) => ({ x: e.x, y: (ct += e.tok) })); const costSeries = evs.map((e) => ({ x: e.x, y: (cc += e.cost) }));
         const peakCall = Math.max(0, ...model.map((s) => (s.tokenUsage ? s.tokenUsage.inputTokens + s.tokenUsage.outputTokens : 0)));
 
-        content.innerHTML = `
+        content.innerHTML = renderEvals() + `
           <div class="section">
             <div class="gauges">
               <div class="gpanel"><div class="gauge" id="g-tok"></div><div class="meta"><div class="title">Tokens used</div><div class="big">${fmtTok(tokens)}</div><div class="subline">${Math.round((tokens/tokBudget)*100)}% of ${fmtTok(tokBudget)} budget</div></div></div>
@@ -337,6 +434,7 @@
       if (META.live && location.protocol.startsWith("http")) {
         const es = new EventSource("/events");
         es.addEventListener("span", (e) => { try { const s = JSON.parse(e.data); const i = SPANS.findIndex((x) => x.spanId === s.spanId); if (i >= 0) SPANS[i] = s; else SPANS.push(s); scheduleRender(); } catch (_) {} });
+        es.addEventListener("eval", (e) => { try { const r = JSON.parse(e.data); const i = EVALS.findIndex((x) => x.taskId === r.taskId); if (i >= 0) EVALS[i] = r; else EVALS.push(r); scheduleRender(); } catch (_) {} });
         es.addEventListener("meta", (e) => { try { Object.assign(META, JSON.parse(e.data)); scheduleRender(); } catch (_) {} });
         es.addEventListener("done", () => { META.live = false; es.close(); scheduleRender(); });
       }

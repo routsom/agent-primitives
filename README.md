@@ -41,6 +41,14 @@ npm run profile                 # live: gauges fill in real time as the run exec
 # Python: uv run python -m examples.research_task   ·   PROFILER=live uv run python -m examples.research_task
 ```
 
+The same dashboard also visualizes your **LLM-as-judge evals** - a radar of average score per rubric criterion, pass rate, and a per-task score heatmap - filling in live as each task is judged:
+
+![agent-primitives eval dashboard](.github/assets/eval-dashboard.png)
+
+```bash
+npm run eval:profile            # live eval dashboard   (static: npm run eval)
+```
+
 ---
 
 ## 🧠 Why not just use a framework?

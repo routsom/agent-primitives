@@ -16,6 +16,10 @@ npm run eval                                              # typescript/
 uv run python -m multiagent_boilerplate.evals.run_eval    # python/
 ```
 
+Both write an **eval dashboard** (radar of average scores, pass rate, per-task heatmap) and
+open it; `npm run eval:profile` / `PROFILER=live` streams each verdict live as it lands. See
+[Profiler & cost](/profiler/#live-eval-dashboard).
+
 Both run the same seed task set (`specs/prompts/judge.md` + each runtime's `seed_tasks`/
 `seedTasks.json`) through the full orchestrator-worker flow, then score the result with the
 judge role.
