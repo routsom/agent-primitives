@@ -27,30 +27,6 @@ Most multi-agent starter kits are one of two traps: a **thin wrapper** around a 
 
 `agent-primitives` is neither. You own the agent loop, the harness, and the orchestration as plain, readable code - with the boring-but-critical reliability machinery already built and tested. Clone it, run it on a mock provider with no keys, then swap in a real model when you're ready to ship.
 
----
-
-## 📊 A built-in profiler, Instruments-style
-
-Run your agents and get a dashboard - no framework gives you this out of the box. One app with an **Xcode-style left navigator**: gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, and per-agent tracks on **Overview**; the full turn → agent → tool call waterfall on **Timeline**. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
-
-![agent-primitives profiler](.github/assets/profiler.png)
-
-```bash
-npm run example:research        # writes a dashboard.html and opens it
-npm run profile                 # live: gauges fill in real time as the run executes
-# Python: uv run python -m examples.research_task   ·   PROFILER=live uv run python -m examples.research_task
-```
-
-The same app carries an **Evals** view in the navigator - a radar of average score per rubric criterion, pass rate, and a per-task score heatmap - filling in live as each task is judged:
-
-![agent-primitives eval dashboard](.github/assets/eval-dashboard.png)
-
-```bash
-npm run eval:profile            # live eval dashboard   (static: npm run eval)
-```
-
----
-
 ## 🧠 Why not just use a framework?
 
 |  | LangGraph / CrewAI / AutoGen | Thin SDK wrapper | **agent-primitives** |
@@ -97,6 +73,12 @@ Both run on a **deterministic mock provider out of the box** - no API key, no ac
 - **🔍 Review that costs nothing.** `needs_review` is derived from the trace structure (partial completion, unrecovered errors, truncation) - deterministically, with zero extra LLM calls. Your judge gets *triggered* by it, not billed for it.
 - **🤖 Agentic-coding native.** `CLAUDE.md`, editor hooks, subagent role definitions, and slash commands ship in the box, not as an afterthought.
 
+And one more thing ... 
+
+In-built instrumental realtime dashboard to monitor almost everything you need. 
+
+![Demo](.github/assets/profiler-live.gif)
+
 ---
 
 ## 🏗️ Architecture at a glance
@@ -138,6 +120,30 @@ Full sequence + flow diagrams live in the **[docs site](https://routsom.github.i
 | `evals/` | LLM-as-judge rubric; structural review flags *trigger* the judge |
 
 Every layer exists in **both** `typescript/` and `python/`, reading shared contracts from `specs/`.
+
+---
+
+---
+
+## 📊 A built-in profiler, Instruments-style
+
+Run your agents and get a dashboard - no framework gives you this out of the box. One app with an **Xcode-style left navigator**: gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, and per-agent tracks on **Overview**; the full turn → agent → tool call waterfall on **Timeline**. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
+
+![agent-primitives profiler](.github/assets/profiler.png)
+
+```bash
+npm run example:research        # writes a dashboard.html and opens it
+npm run profile                 # live: gauges fill in real time as the run executes
+# Python: uv run python -m examples.research_task   ·   PROFILER=live uv run python -m examples.research_task
+```
+
+The same app carries an **Evals** view in the navigator - a radar of average score per rubric criterion, pass rate, and a per-task score heatmap - filling in live as each task is judged:
+
+![agent-primitives eval dashboard](.github/assets/eval-dashboard.png)
+
+```bash
+npm run eval:profile            # live eval dashboard   (static: npm run eval)
+```
 
 ---
 
