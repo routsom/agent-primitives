@@ -9,6 +9,14 @@ you don't wire anything up: it renders from the trace spans every run already em
 
 ![agent-primitives profiler](/agent-primitives/profiler.png)
 
+## One app, a left navigator
+
+Everything is one page with an Xcode-style **navigator** on the left, not a pile of dashboards
+you have to open separately. The sidebar lists only the views that have data - **Overview** and
+**Timeline** under *Run*, **Evals** under *Evaluation* - each with a live stat (tokens, duration,
+average score), and the detail pane switches as you click. A run opens on Overview; an eval-only
+export opens on Evals. Live updates flow into whichever view you're on.
+
 ## What it shows
 
 - **Gauges** - tokens used against the session budget, and **estimated dollar cost** against a
@@ -51,10 +59,12 @@ opened as a file - the same HTML either way.
 
 ## Live eval dashboard
 
-The same dashboard renders an **Evals** section from LLM-as-judge verdicts: a radar of the
-average score per rubric criterion (accuracy · completeness · source quality · process ·
-disclosure), summary cards (tasks judged · average · pass rate · flagged), and a **per-task
-score heatmap** with review flags. It fills row-by-row in real time as each task is judged.
+The same app carries an **Evals** view (in the navigator's *Evaluation* group) built from
+LLM-as-judge verdicts: a radar of the average score per rubric criterion (accuracy ·
+completeness · source quality · process · disclosure), summary cards (tasks judged · average ·
+pass rate · flagged), and a **per-task score heatmap** with review flags. It fills row-by-row in
+real time as each task is judged. A judged run carries both its Run views and its Evals view in
+the one page, so you flip between the trace and its verdict without leaving the dashboard.
 
 ![agent-primitives eval dashboard](/agent-primitives/eval-dashboard.png)
 

@@ -1,10 +1,11 @@
 <!doctype html>
 <!--
   agent-primitives profiler - zero-dependency run dashboard, Xcode-Instruments style.
-  Rendered from the trace spans a run emits (turn -> agent -> model/tool call).
+  One app: a left navigator (source list) switches between Overview / Timeline / Evals,
+  all from one payload (run spans + eval verdicts). Rendered from the trace spans a run emits.
   Two modes, one file: served live (SSE) it auto-updates in real time; opened as a static
   file it renders the embedded snapshot. The runtime injects the run payload at the sentinel
-  further down. No server needed to view a static export, no build step, works offline.
+  below. No server needed to view a static export, no build step, works offline.
 -->
 <html lang="en">
   <head>
@@ -14,7 +15,7 @@
     <script id="ap-payload" type="application/json">%%AGENT_PRIMITIVES_PAYLOAD%%</script>
     <style>
       :root {
-        --bg: #0d0d10; --panel: #16161b; --panel2: #1c1c22; --border: #292930;
+        --bg: #0d0d10; --panel: #16161b; --panel2: #1c1c22; --nav: #0f0f13; --border: #292930;
         --text: #eceef2; --muted: #8b8c96; --faint: #5b5c66;
         --green: #32d74b; --yellow: #ffd60a; --orange: #ff9f0a; --red: #ff453a;
         --blue: #0a84ff; --violet: #bf5af2; --teal: #40c8e0; --pink: #ff6482;
@@ -23,10 +24,13 @@
         --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; }
+      html, body { margin: 0; height: 100%; }
       body { background: var(--bg); color: var(--text); font-family: var(--ui); font-size: 13px; -webkit-font-smoothing: antialiased; }
-      .topbar { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--border);
-        background: linear-gradient(180deg, #1b1b21, #131318); position: sticky; top: 0; z-index: 10; }
+
+      /* App shell: titlebar over a [navigator | detail] split, both filling the viewport. */
+      .app { display: flex; flex-direction: column; height: 100vh; }
+      .titlebar { flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; height: 46px;
+        border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #1b1b21, #131318); }
       .brand { font-weight: 650; letter-spacing: -0.2px; } .brand .bolt { color: var(--orange); }
       .brand .sub { color: var(--faint); font-weight: 400; }
       .runid { color: var(--faint); font-family: var(--mono); font-size: 12px; }
@@ -40,19 +44,45 @@
       .pill.error { color: var(--red); border-color: color-mix(in oklab, var(--red), transparent 55%); }
       .pill.partial { color: var(--orange); border-color: color-mix(in oklab, var(--orange), transparent 55%); }
 
+      .body { flex: 1; display: flex; min-height: 0; }
+
+      /* Navigator: Xcode-style source list. Groups, selectable rows, a live stat per view. */
+      .navigator { width: 236px; flex: none; background: var(--nav); border-right: 1px solid var(--border);
+        overflow-y: auto; padding: 12px 10px; }
+      .nav-grp { margin-bottom: 16px; }
+      .nav-grp > .h { font-size: 10.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--faint);
+        font-weight: 650; padding: 4px 8px 6px; }
+      .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px; cursor: pointer;
+        color: var(--muted); user-select: none; transition: background 0.12s, color 0.12s; }
+      .nav-item:hover { background: #17171d; color: var(--text); }
+      .nav-item.sel { background: color-mix(in oklab, var(--blue), transparent 80%); color: var(--text); }
+      .nav-item .ico { width: 17px; height: 17px; flex: none; color: var(--faint); display: flex; }
+      .nav-item:hover .ico, .nav-item.sel .ico { color: var(--blue); }
+      .nav-item .nm { flex: 1; font-size: 13px; letter-spacing: -0.1px; }
+      .nav-item .stat { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+      .nav-item.sel .stat { color: color-mix(in oklab, var(--blue), var(--text) 45%); }
+      .nav-foot { color: var(--faint); font-family: var(--mono); font-size: 10px; padding: 10px 8px 0; line-height: 1.6; }
+
+      /* Detail pane: scrolls independently. Each view sets a header strip. */
+      .detail { flex: 1; overflow-y: auto; min-width: 0; }
+      .view-head { display: flex; align-items: baseline; gap: 12px; padding: 15px 20px 13px; border-bottom: 1px solid var(--border);
+        position: sticky; top: 0; background: linear-gradient(180deg, var(--bg), color-mix(in oklab, var(--bg), transparent 8%)); z-index: 5; backdrop-filter: blur(6px); }
+      .view-head h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.3px; }
+      .view-head .cap { color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
+
       .section { border-bottom: 1px solid var(--border); }
-      .section > h2 { margin: 0; padding: 14px 18px 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; font-weight: 600; }
+      .section > h2 { margin: 0; padding: 15px 20px 0; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 650; }
 
       /* Gauge row */
       .gauges { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 1px; background: var(--border); margin-top: 14px; border-top: 1px solid var(--border); }
-      .gpanel { background: var(--panel); padding: 16px 18px 20px; display: flex; align-items: center; gap: 18px; }
+      .gpanel { background: var(--panel); padding: 18px 20px 22px; display: flex; align-items: center; gap: 18px; }
       .gpanel .meta { min-width: 0; }
-      .gpanel .title { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-      .gpanel .big { font-family: var(--mono); font-size: 34px; letter-spacing: -1px; line-height: 1; }
+      .gpanel .title { color: var(--muted); font-size: 12px; margin-bottom: 5px; letter-spacing: 0.2px; }
+      .gpanel .big { font-family: var(--mono); font-size: 35px; letter-spacing: -1.2px; line-height: 1; }
       .gpanel .big .u { font-size: 16px; color: var(--muted); margin-left: 3px; }
-      .gpanel .subline { color: var(--faint); font-family: var(--mono); font-size: 12px; margin-top: 6px; }
+      .gpanel .subline { color: var(--faint); font-family: var(--mono); font-size: 12px; margin-top: 7px; }
       .gauge svg { display: block; }
-      .needle { transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1); transform-origin: 100px 100px; }
+      .needle { transition: transform 0.7s cubic-bezier(0.2, 0.9, 0.3, 1); transform-origin: 100px 100px; }
       .donut-legend { display: flex; flex-direction: column; gap: 7px; }
       .donut-legend .li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
       .donut-legend .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; align-self: center; }
@@ -60,8 +90,8 @@
 
       /* Over-time */
       .overtime { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); margin-top: 14px; }
-      .otcard { background: var(--panel); padding: 14px 18px 16px; display: flex; gap: 16px; }
-      .otcard .stat { flex: none; width: 118px; }
+      .otcard { background: var(--panel); padding: 15px 20px 17px; display: flex; gap: 16px; }
+      .otcard .stat { flex: none; width: 136px; }
       .otcard .stat .t { font-size: 13px; margin-bottom: 8px; }
       .otcard .stat .r { color: var(--faint); font-size: 12px; font-family: var(--mono); line-height: 1.7; }
       .otcard .stat .r b { color: var(--text); font-weight: 500; }
@@ -70,15 +100,15 @@
       /* Agent tracks */
       .tracks { margin-top: 6px; }
       .trk { display: flex; align-items: center; gap: 0; height: 40px; border-top: 1px solid #15151a; }
-      .trk .lab { width: 200px; flex: none; padding-left: 18px; }
+      .trk .lab { width: 210px; flex: none; padding-left: 20px; }
       .trk .lab .n { font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
       .trk .lab .n .dot { width: 8px; height: 8px; border-radius: 2px; }
       .trk .lab .s { color: var(--faint); font-family: var(--mono); font-size: 10.5px; margin-left: 15px; }
-      .trk .spark { flex: 1; min-width: 0; padding-right: 18px; } .trk .spark svg { width: 100%; height: 30px; display: block; }
+      .trk .spark { flex: 1; min-width: 0; padding-right: 20px; } .trk .spark svg { width: 100%; height: 30px; display: block; }
 
       /* Timeline waterfall */
-      .twrap { overflow-x: auto; padding-bottom: 8px; }
-      .axis { position: relative; height: 22px; margin-left: 210px; border-bottom: 1px solid var(--border); }
+      .twrap { overflow-x: auto; padding: 4px 0 8px; }
+      .axis { position: relative; height: 22px; margin-left: 220px; border-bottom: 1px solid var(--border); }
       .axis .tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--grid); }
       .axis .tick span { position: absolute; top: 4px; left: 5px; color: var(--faint); font-family: var(--mono); font-size: 10px; }
       .row { position: relative; height: 26px; border-bottom: 1px solid #131318; }
@@ -96,28 +126,31 @@
       .bar.status-partial { background: repeating-linear-gradient(45deg,#ff9f0a,#ff9f0a 4px,#b8730a 4px,#b8730a 8px) !important; }
       .bar .bl { position: absolute; left: 6px; right: 6px; line-height: 14px; font-family: var(--mono); font-size: 10px; color: rgba(0,0,0,0.72); font-weight: 600; overflow: hidden; white-space: nowrap; }
 
-      .details { margin: 0 18px 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: none; }
+      .details { margin: 14px 20px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: none; }
       .details.on { display: block; }
       .details .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 18px; }
       .details .kv .k { color: var(--muted); font-size: 11px; } .details .kv .v { font-family: var(--mono); font-size: 12px; }
       .details .kv .v.green { color: var(--green); } .details .kv .v.red { color: var(--red); }
-      .legend { display: flex; gap: 14px; padding: 8px 18px; font-size: 11px; color: var(--muted); }
+      .legend { display: flex; gap: 14px; padding: 10px 20px 16px; font-size: 11px; color: var(--muted); }
       .legend .li { display: flex; align-items: center; gap: 6px; } .legend .dot { width: 9px; height: 9px; border-radius: 2px; }
       .foot { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-      .empty { color: var(--faint); padding: 40px 18px; text-align: center; }
+      .empty { color: var(--faint); padding: 60px 20px; text-align: center; }
 
       /* Evals */
       .evals-top { display: grid; grid-template-columns: 300px 1fr; gap: 1px; background: var(--border); margin-top: 14px; border-top: 1px solid var(--border); }
       .evals-radar { background: var(--panel); padding: 12px 18px; display: flex; align-items: center; justify-content: center; }
       .evals-cards { background: var(--panel); display: grid; grid-template-columns: repeat(4, 1fr); }
-      .evals-cards .card { padding: 14px 18px; border-left: 1px solid var(--border); }
+      .evals-cards .card { padding: 16px 18px; border-left: 1px solid var(--border); }
       .evals-cards .card:first-child { border-left: none; }
+      .evals-cards .k { color: var(--muted); font-size: 11px; margin-bottom: 7px; letter-spacing: 0.2px; }
+      .evals-cards .v { font-family: var(--mono); font-size: 27px; letter-spacing: -0.8px; line-height: 1; }
+      .evals-cards .sub { color: var(--faint); font-size: 11px; font-family: var(--mono); margin-top: 7px; }
       .evals-cards .v.good { color: var(--green); } .evals-cards .v.warn { color: var(--orange); }
       .heat { width: 100%; border-collapse: collapse; font-size: 12px; }
-      .heat th { text-align: center; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; padding: 10px 6px; border-bottom: 1px solid var(--border); }
-      .heat th.task { text-align: left; padding-left: 18px; width: 30%; }
+      .heat th { text-align: center; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 650; padding: 12px 6px; border-bottom: 1px solid var(--border); }
+      .heat th.task { text-align: left; padding-left: 20px; width: 30%; }
       .heat td { padding: 0; border-bottom: 1px solid #15151a; height: 34px; }
-      .heat td.task { padding-left: 18px; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+      .heat td.task { padding-left: 20px; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
       .heat td.task .fl { color: var(--orange); font-size: 10px; margin-left: 8px; }
       .heat td.cell { text-align: center; }
       .heat td.cell .box { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 22px; border-radius: 4px; font-family: var(--mono); font-size: 12px; font-weight: 600; color: #0c0c0f; transition: background 0.4s; }
@@ -127,22 +160,26 @@
     </style>
   </head>
   <body>
-    <div class="topbar">
-      <div class="brand"><span class="bolt">⚡</span> agent-primitives <span class="sub">· profiler</span></div>
-      <div class="runid" id="runid"></div>
-      <div class="spacer"></div>
-      <div class="live" id="live"><span class="dot"></span>LIVE</div>
-      <div class="pill" id="durpill"></div>
-      <div class="pill" id="statuspill"></div>
+    <div class="app">
+      <div class="titlebar">
+        <div class="brand"><span class="bolt">⚡</span> agent-primitives <span class="sub">· profiler</span></div>
+        <div class="runid" id="runid"></div>
+        <div class="spacer"></div>
+        <div class="live" id="live"><span class="dot"></span>LIVE</div>
+        <div class="pill" id="durpill"></div>
+        <div class="pill" id="statuspill"></div>
+      </div>
+      <div class="body">
+        <aside class="navigator" id="navigator"></aside>
+        <main class="detail" id="content"></main>
+      </div>
     </div>
-
-    <div id="content"></div>
 
     <script>
       const KIND_COLOR = { turn: "#3a3a44", agent: "#0a84ff", model_call: "#32d74b", tool_call: "#ff9f0a", a2a_call: "#40c8e0" };
       const AGENT_COLORS = ["#0a84ff", "#bf5af2", "#40c8e0", "#ff6482", "#ffd60a", "#32d74b", "#ff9f0a"];
 
-      let META = {}, SPANS = [], EVALS = [], selectedId = null;
+      let META = {}, SPANS = [], EVALS = [], selectedId = null, currentView = null;
       try { const p = JSON.parse(document.getElementById("ap-payload").textContent); META = p.meta || {}; SPANS = p.spans || []; EVALS = p.evals || []; } catch (e) {}
       const CRITERIA_ORDER = ["accuracy", "completeness", "source_quality", "process", "disclosure"];
       const CRIT_LABEL = { accuracy: "Accuracy", completeness: "Complete", source_quality: "Sources", process: "Process", disclosure: "Disclosure" };
@@ -172,9 +209,16 @@
           arc(cx, cy, r, START, START + SWEEP * 0.6, 12, "var(--green)") +
           arc(cx, cy, r, START + SWEEP * 0.6, START + SWEEP * 0.85, 12, "var(--yellow)") +
           arc(cx, cy, r, START + SWEEP * 0.85, START + SWEEP, 12, "var(--red)");
+        // Segmented notches over the band give the instrument its machined look.
+        let ticks = "";
+        for (let i = 0; i <= 12; i++) {
+          const a = START + (SWEEP * i) / 12;
+          const [x1, y1] = pt(cx, cy, r - 6.5, a), [x2, y2] = pt(cx, cy, r + 6.5, a);
+          ticks += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="var(--bg)" stroke-width="${i % 3 === 0 ? 2.4 : 1.2}"/>`;
+        }
         const [nx, ny] = pt(cx, cy, r - 8, START);
-        const needle = `<g class="needle"><line x1="${cx}" y1="${cy}" x2="${nx.toFixed(2)}" y2="${ny.toFixed(2)}" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="4.5" fill="#fff"/></g>`;
-        return `<svg width="164" height="138" viewBox="0 0 200 168">${track}${zones}${needle}</svg>`;
+        const needle = `<g class="needle"><line x1="${cx}" y1="${cy}" x2="${nx.toFixed(2)}" y2="${ny.toFixed(2)}" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="4.5" fill="#fff"/><circle cx="${cx}" cy="${cy}" r="8.5" fill="none" stroke="#fff" stroke-opacity="0.25" stroke-width="1"/></g>`;
+        return `<svg width="164" height="138" viewBox="0 0 200 168">${track}${zones}${ticks}${needle}</svg>`;
       }
       function donut(parts) {
         const cx = 60, cy = 60, r = 44, w = 16, C = 2 * Math.PI * r;
@@ -225,43 +269,6 @@
         return `<svg width="300" height="220" viewBox="-46 0 300 220">${grid}${axes}<polygon points="${dpts}" fill="rgba(10,132,255,0.22)" stroke="#0a84ff" stroke-width="1.8"/>${dots}${lbls}</svg>`;
       }
 
-      function renderEvals() {
-        if (!EVALS.length) return "";
-        // Criteria = known order first, then any extra keys seen.
-        const seen = new Set();
-        EVALS.forEach((e) => Object.keys(e.scores || {}).forEach((k) => seen.add(k)));
-        const crit = [...CRITERIA_ORDER.filter((k) => seen.has(k)), ...[...seen].filter((k) => !CRITERIA_ORDER.includes(k))];
-        const avgOf = (k) => { const vs = EVALS.map((e) => e.scores[k]).filter((v) => typeof v === "number"); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0; };
-        const critAvg = crit.map(avgOf);
-        const allVals = EVALS.flatMap((e) => crit.map((k) => e.scores[k]).filter((v) => typeof v === "number"));
-        const overall = allVals.length ? allVals.reduce((a, b) => a + b, 0) / allVals.length : 0;
-        const passed = EVALS.filter((e) => crit.every((k) => (e.scores[k] ?? 0) >= 3)).length;
-        const flagged = EVALS.filter((e) => e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length)).length;
-
-        const cards = [
-          { k: "Tasks judged", v: String(EVALS.length) },
-          { k: "Avg score", v: overall.toFixed(1) + " / 5", cls: overall >= 4 ? "good" : overall >= 3 ? "" : "warn" },
-          { k: "Pass rate", v: Math.round((passed / EVALS.length) * 100) + "%", cls: passed === EVALS.length ? "good" : "warn", sub: passed + " / " + EVALS.length + " all ≥ 3" },
-          { k: "Flagged", v: String(flagged), cls: flagged ? "warn" : "good" },
-        ];
-        const head = `<tr><th class="task">Task</th>${crit.map((k) => `<th>${CRIT_LABEL[k] || esc(k)}</th>`).join("")}<th>Review</th></tr>`;
-        const body = EVALS.map((e) => {
-          const cells = crit.map((k) => { const v = e.scores[k]; return `<td class="cell">${typeof v === "number" ? `<span class="box" style="background:${scoreColor(v)}">${v}</span>` : "·"}</td>`; }).join("");
-          const flags = (e.structuralFlags && e.structuralFlags.length) ? `<span class="fl">${esc(e.structuralFlags.join(", "))}</span>` : "";
-          const chip = e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length) ? `<span class="flagchip">review</span>` : "";
-          return `<tr><td class="task">${esc(e.taskId)}${flags}</td>${cells}<td class="cell">${chip}</td></tr>`;
-        }).join("");
-
-        return `<div class="section">
-          <h2>Evals · LLM-as-judge · ${EVALS.length} judged</h2>
-          <div class="evals-top">
-            <div class="evals-radar">${radar(crit.map((k) => CRIT_LABEL[k] || k), critAvg)}</div>
-            <div class="evals-cards">${cards.map((c) => `<div class="card"><div class="k">${c.k}</div><div class="v ${c.cls || ""}">${c.v}</div>${c.sub ? `<div class="sub">${c.sub}</div>` : '<div class="sub">&nbsp;</div>'}</div>`).join("")}</div>
-          </div>
-          <table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table>
-        </div>`;
-      }
-
       // Clean display name: "lead:<uuid>" -> "lead", "citation:<uuid>-citation" -> "citation",
       // "subagent:sub-1" -> "sub-1". Strips the run/task UUID so labels stay short.
       function agentKey(s) {
@@ -272,22 +279,9 @@
         return /[0-9a-f]{8}-[0-9a-f]{4}/.test(id) ? role : id;
       }
 
-      function render() {
-        const content = document.getElementById("content");
-        const hasRun = SPANS.length > 0;
-        if (!hasRun && !EVALS.length) { content.innerHTML = '<div class="empty">Waiting for data…</div>'; return; }
-        document.getElementById("live").className = "live" + (META.live ? " on" : "");
-
-        if (!hasRun) {
-          // Eval-only dashboard (the eval suite): show the judge matrices, no run trace.
-          const flagged = EVALS.filter((e) => e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length)).length;
-          document.getElementById("runid").textContent = META.title || "eval suite";
-          document.getElementById("durpill").textContent = EVALS.length + " tasks judged";
-          const sp = document.getElementById("statuspill"); sp.textContent = flagged ? "review" : "ok"; sp.className = "pill " + (flagged ? "partial" : "ok");
-          content.innerHTML = renderEvals();
-          return;
-        }
-
+      // ---- derive all run metrics once, shared by the Overview, Timeline, and nav stats ----
+      function computeRun() {
+        if (!SPANS.length) return null;
         const t0 = Math.min(...SPANS.map((s) => ms(s.startedAt)));
         const t1 = Math.max(...SPANS.map((s) => (s.endedAt ? ms(s.endedAt) : ms(s.startedAt))));
         const total = Math.max(1, t1 - t0);
@@ -303,11 +297,6 @@
         const tokBudget = META.tokenBudget || 250000;
         const costBudget = META.costBudget || Math.max(0.05, cost * 2);
 
-        document.getElementById("runid").textContent = (META.runId || SPANS[0].traceId || "").slice(0, 8);
-        const dp = document.getElementById("durpill"); dp.textContent = fmtDur(total) + " · " + SPANS.length + " spans";
-        const sp = document.getElementById("statuspill"); sp.textContent = runStatus; sp.className = "pill " + runStatus;
-
-        // token distribution by agent (group model_call by parent agent span)
         const byId = new Map(SPANS.map((s) => [s.spanId, s]));
         const dist = new Map();
         for (const m of model) {
@@ -318,72 +307,107 @@
         }
         const distParts = [...dist.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ k, v, c: AGENT_COLORS[i % AGENT_COLORS.length] }));
 
-        // cumulative over-time series (by model call end time)
         const evs = model.map((s) => ({ x: ((ms(s.endedAt || s.startedAt) - t0) / total) * 1000, tok: ((s.tokenUsage && (s.tokenUsage.inputTokens + s.tokenUsage.outputTokens)) || 0), cost: s.costUsd || 0 })).sort((a, b) => a.x - b.x);
         let ct = 0, cc = 0; const tokSeries = evs.map((e) => ({ x: e.x, y: (ct += e.tok) })); const costSeries = evs.map((e) => ({ x: e.x, y: (cc += e.cost) }));
         const peakCall = Math.max(0, ...model.map((s) => (s.tokenUsage ? s.tokenUsage.inputTokens + s.tokenUsage.outputTokens : 0)));
+        const depth = Math.max(0, ...SPANS.map((s) => s.delegationDepth || 0));
+        return { t0, total, model, tools, agents, tokIn, tokOut, tokens, cost, errors, runStatus, tokBudget, costBudget, distParts, tokSeries, costSeries, peakCall, depth };
+      }
 
-        content.innerHTML = renderEvals() + `
+      // ---- eval aggregates, shared by the Evals view and the nav stat ----
+      function computeEvals() {
+        if (!EVALS.length) return null;
+        const seen = new Set();
+        EVALS.forEach((e) => Object.keys(e.scores || {}).forEach((k) => seen.add(k)));
+        const crit = [...CRITERIA_ORDER.filter((k) => seen.has(k)), ...[...seen].filter((k) => !CRITERIA_ORDER.includes(k))];
+        const avgOf = (k) => { const vs = EVALS.map((e) => e.scores[k]).filter((v) => typeof v === "number"); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0; };
+        const critAvg = crit.map(avgOf);
+        const allVals = EVALS.flatMap((e) => crit.map((k) => e.scores[k]).filter((v) => typeof v === "number"));
+        const overall = allVals.length ? allVals.reduce((a, b) => a + b, 0) / allVals.length : 0;
+        const passed = EVALS.filter((e) => crit.every((k) => (e.scores[k] ?? 0) >= 3)).length;
+        const flagged = EVALS.filter((e) => e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length)).length;
+        return { crit, critAvg, overall, passed, flagged };
+      }
+
+      // ---- views ----
+      function renderEvalsView(E) {
+        const { crit, critAvg, overall, passed, flagged } = E;
+        const cards = [
+          { k: "Tasks judged", v: String(EVALS.length) },
+          { k: "Avg score", v: overall.toFixed(1) + " / 5", cls: overall >= 4 ? "good" : overall >= 3 ? "" : "warn" },
+          { k: "Pass rate", v: Math.round((passed / EVALS.length) * 100) + "%", cls: passed === EVALS.length ? "good" : "warn", sub: passed + " / " + EVALS.length + " all ≥ 3" },
+          { k: "Flagged", v: String(flagged), cls: flagged ? "warn" : "good" },
+        ];
+        const head = `<tr><th class="task">Task</th>${crit.map((k) => `<th>${CRIT_LABEL[k] || esc(k)}</th>`).join("")}<th>Review</th></tr>`;
+        const body = EVALS.map((e) => {
+          const cells = crit.map((k) => { const v = e.scores[k]; return `<td class="cell">${typeof v === "number" ? `<span class="box" style="background:${scoreColor(v)}">${v}</span>` : "·"}</td>`; }).join("");
+          const flags = (e.structuralFlags && e.structuralFlags.length) ? `<span class="fl">${esc(e.structuralFlags.join(", "))}</span>` : "";
+          const chip = e.flagForHumanReview || (e.structuralFlags && e.structuralFlags.length) ? `<span class="flagchip">review</span>` : "";
+          return `<tr><td class="task">${esc(e.taskId)}${flags}</td>${cells}<td class="cell">${chip}</td></tr>`;
+        }).join("");
+        return `
+          <div class="view-head"><h1>Evals</h1><div class="cap">LLM-as-judge · ${EVALS.length} judged · avg ${overall.toFixed(1)}/5</div></div>
+          <div class="section">
+            <div class="evals-top">
+              <div class="evals-radar">${radar(crit.map((k) => CRIT_LABEL[k] || k), critAvg)}</div>
+              <div class="evals-cards">${cards.map((c) => `<div class="card"><div class="k">${c.k}</div><div class="v ${c.cls || ""}">${c.v}</div>${c.sub ? `<div class="sub">${c.sub}</div>` : '<div class="sub">&nbsp;</div>'}</div>`).join("")}</div>
+            </div>
+            <table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table>
+          </div>`;
+      }
+
+      function renderOverview(R) {
+        return `
+          <div class="view-head"><h1>Overview</h1><div class="cap">${fmtTok(R.tokens)} tokens · ${R.cost === 0 ? "mock $0" : fmtCost(R.cost)} · ${R.model.length} model · ${R.tools.length} tool calls</div></div>
           <div class="section">
             <div class="gauges">
-              <div class="gpanel"><div class="gauge" id="g-tok"></div><div class="meta"><div class="title">Tokens used</div><div class="big">${fmtTok(tokens)}</div><div class="subline">${Math.round((tokens/tokBudget)*100)}% of ${fmtTok(tokBudget)} budget</div></div></div>
-              <div class="gpanel"><div class="gauge" id="g-cost"></div><div class="meta"><div class="title">Estimated cost</div><div class="big">${fmtCost(cost)}</div><div class="subline">${cost === 0 ? "mock provider" : Math.round((cost/costBudget)*100) + "% of " + fmtCost(costBudget) + " cap"}</div></div></div>
-              <div class="gpanel"><div class="gauge">${donut(distParts.length ? distParts : [{k:"none",v:1,c:"#26262d"}])}</div><div class="meta" style="flex:1"><div class="title">Token distribution</div><div class="donut-legend">${distParts.slice(0,5).map((p) => `<div class="li"><span class="sw" style="background:${p.c}"></span><span class="nm">${esc(p.k)}</span><span class="val">${fmtTok(p.v)}</span></div>`).join("") || '<div class="subline">no model calls yet</div>'}</div></div></div>
+              <div class="gpanel"><div class="gauge" id="g-tok"></div><div class="meta"><div class="title">Tokens used</div><div class="big">${fmtTok(R.tokens)}</div><div class="subline">${Math.round((R.tokens/R.tokBudget)*100)}% of ${fmtTok(R.tokBudget)} budget</div></div></div>
+              <div class="gpanel"><div class="gauge" id="g-cost"></div><div class="meta"><div class="title">Estimated cost</div><div class="big">${fmtCost(R.cost)}</div><div class="subline">${R.cost === 0 ? "mock provider" : Math.round((R.cost/R.costBudget)*100) + "% of " + fmtCost(R.costBudget) + " cap"}</div></div></div>
+              <div class="gpanel"><div class="gauge">${donut(R.distParts.length ? R.distParts : [{k:"none",v:1,c:"#26262d"}])}</div><div class="meta" style="flex:1"><div class="title">Token distribution</div><div class="donut-legend">${R.distParts.slice(0,5).map((p) => `<div class="li"><span class="sw" style="background:${p.c}"></span><span class="nm">${esc(p.k)}</span><span class="val">${fmtTok(p.v)}</span></div>`).join("") || '<div class="subline">no model calls yet</div>'}</div></div></div>
             </div>
           </div>
-
           <div class="section">
             <div class="overtime">
-              <div class="otcard"><div class="stat"><div class="t">Tokens over time</div><div class="r"><b>${fmtNum(tokens)}</b> total<br/><b>${fmtNum(tokIn)}</b> in · <b>${fmtNum(tokOut)}</b> out<br/>peak call <b>${fmtNum(peakCall)}</b></div></div><div class="chart">${area(tokSeries, 1000, 92, "#32d74b")}</div></div>
-              <div class="otcard"><div class="stat"><div class="t">Cost over time</div><div class="r"><b>${fmtCost(cost)}</b> total<br/><b>${model.length}</b> model calls<br/><b>${tools.length}</b> tool calls</div></div><div class="chart">${area(costSeries, 1000, 92, "#0a84ff")}</div></div>
+              <div class="otcard"><div class="stat"><div class="t">Tokens over time</div><div class="r"><b>${fmtNum(R.tokens)}</b> total<br/><b>${fmtNum(R.tokIn)}</b> in · <b>${fmtNum(R.tokOut)}</b> out<br/>peak call <b>${fmtNum(R.peakCall)}</b></div></div><div class="chart">${area(R.tokSeries, 1000, 92, "#32d74b")}</div></div>
+              <div class="otcard"><div class="stat"><div class="t">Cost over time</div><div class="r"><b>${fmtCost(R.cost)}</b> total<br/><b>${R.model.length}</b> model calls<br/><b>${R.tools.length}</b> tool calls</div></div><div class="chart">${area(R.costSeries, 1000, 92, "#0a84ff")}</div></div>
             </div>
           </div>
-
           <div class="section">
-            <h2>Agents · ${agents.length} spawned, depth ≤ ${Math.max(0, ...SPANS.map((s) => s.delegationDepth || 0))}</h2>
+            <h2>Agents · ${R.agents.length} spawned, depth ≤ ${R.depth}</h2>
             <div class="tracks" id="tracks"></div>
-          </div>
-
-          <div class="section">
-            <h2>Timeline</h2>
-            <div class="details ${selectedId ? "on" : ""}" id="details"></div>
-            <div class="twrap" id="twrap"></div>
-            <div class="legend">
-              <div class="li"><span class="dot" style="background:#3a3a44"></span>turn</div>
-              <div class="li"><span class="dot" style="background:#0a84ff"></span>agent</div>
-              <div class="li"><span class="dot" style="background:#32d74b"></span>model call</div>
-              <div class="li"><span class="dot" style="background:#ff9f0a"></span>tool call</div>
-              <div class="li"><span class="dot" style="background:#40c8e0"></span>a2a call</div>
-              <div class="li"><span class="dot" style="background:#ff453a"></span>error</div>
-              <div class="foot">${META.live ? "streaming live" : "static export"} · rendered offline</div>
-            </div>
           </div>`;
-
-        // gauges (needle rotation animates via CSS)
-        setGauge("g-tok", tokens / tokBudget);
-        setGauge("g-cost", costBudget ? cost / costBudget : 0);
-
-        // agent tracks
+      }
+      function postOverview(R) {
+        setGauge("g-tok", R.tokens / R.tokBudget);
+        setGauge("g-cost", R.costBudget ? R.cost / R.costBudget : 0);
         const tracksEl = document.getElementById("tracks");
-        tracksEl.innerHTML = agents.map((a, i) => {
-          const calls = model.filter((m) => m.parentSpanId === a.spanId);
+        if (!tracksEl) return;
+        tracksEl.innerHTML = R.agents.map((a, i) => {
+          const calls = R.model.filter((m) => m.parentSpanId === a.spanId);
           const tk = calls.reduce((s, m) => s + (m.tokenUsage ? m.tokenUsage.inputTokens + m.tokenUsage.outputTokens : 0), 0);
-          const pts = calls.map((m) => ({ x: ((ms(m.startedAt) - t0) / total) * 1000, y: (m.tokenUsage ? m.tokenUsage.inputTokens + m.tokenUsage.outputTokens : 0) }));
+          const pts = calls.map((m) => ({ x: ((ms(m.startedAt) - R.t0) / R.total) * 1000, y: (m.tokenUsage ? m.tokenUsage.inputTokens + m.tokenUsage.outputTokens : 0) }));
           const c = AGENT_COLORS[i % AGENT_COLORS.length];
           return `<div class="trk"><div class="lab"><div class="n"><span class="dot" style="background:${c}"></span>${esc(agentKey(a))}</div><div class="s">${a.agentRole || ""} · ${fmtTok(tk)} tok</div></div><div class="spark">${area(pts, 1000, 30, c)}</div></div>`;
         }).join("");
-
-        renderTimeline(t0, total);
-        if (selectedId) select(selectedId, true);
       }
 
-      function setGauge(id, frac) {
-        const el = document.getElementById(id); if (!el) return;
-        el.innerHTML = gauge();
-        requestAnimationFrame(() => { const n = el.querySelector(".needle"); if (n) n.style.transform = `rotate(${Math.max(0, Math.min(1, frac)) * 270}deg)`; });
+      function renderTimelineView(R) {
+        return `
+          <div class="view-head"><h1>Timeline</h1><div class="cap">${SPANS.length} spans · ${fmtDur(R.total)} · turn → agent → call waterfall</div></div>
+          <div class="details ${selectedId ? "on" : ""}" id="details"></div>
+          <div class="twrap" id="twrap"></div>
+          <div class="legend">
+            <div class="li"><span class="dot" style="background:#3a3a44"></span>turn</div>
+            <div class="li"><span class="dot" style="background:#0a84ff"></span>agent</div>
+            <div class="li"><span class="dot" style="background:#32d74b"></span>model call</div>
+            <div class="li"><span class="dot" style="background:#ff9f0a"></span>tool call</div>
+            <div class="li"><span class="dot" style="background:#40c8e0"></span>a2a call</div>
+            <div class="li"><span class="dot" style="background:#ff453a"></span>error</div>
+            <div class="foot">${META.live ? "streaming live" : "static export"} · rendered offline</div>
+          </div>`;
       }
-
-      function renderTimeline(t0, total) {
+      function postTimeline(R) {
+        const t0 = R.t0, total = R.total;
         const byId = new Map(SPANS.map((s) => [s.spanId, s]));
         const children = new Map();
         for (const s of SPANS) { const p = s.parentSpanId || "__root__"; (children.get(p) || children.set(p, []).get(p)).push(s); }
@@ -395,17 +419,18 @@
         let axis = '<div class="axis">';
         for (let i = 0; i <= 6; i++) axis += `<div class="tick" style="left:${(i / 6) * 100}%"><span>${fmtDur((total * i) / 6)}</span></div>`;
         axis += "</div>";
-        const LW = 210;
+        const LW = 220;
         const rows = ordered.map(({ s, d }) => {
           const left = ((ms(s.startedAt) - t0) / total) * 100;
           const width = Math.max(0.4, (dur(s) / total) * 100);
           const color = KIND_COLOR[s.kind] || "#666";
           const nm = s.kind === "agent" ? agentKey(s) : s.name.replace(/^(lead|subagent|citation|judge):/, "");
           const bl = s.kind === "tool_call" ? s.name : (s.kind === "model_call" && s.costUsd ? fmtCost(s.costUsd) : "");
-          return `<div class="row" data-id="${s.spanId}"><div class="label" style="padding-left:${12 + d * 13}px"><span class="dot" style="background:${color}"></span>${esc(nm)}${s.agentRole ? `<span class="rl">${s.agentRole}</span>` : ""}</div><div class="lane" style="left:${LW}px"><div class="bar k-${s.kind} status-${s.status}" data-id="${s.spanId}" style="left:${left}%;width:${width}%" title="${esc(s.name)} · ${fmtDur(dur(s))}">${bl ? `<span class="bl">${esc(bl)}</span>` : ""}</div></div></div>`;
+          return `<div class="row" data-id="${s.spanId}"><div class="label" style="padding-left:${14 + d * 13}px"><span class="dot" style="background:${color}"></span>${esc(nm)}${s.agentRole ? `<span class="rl">${s.agentRole}</span>` : ""}</div><div class="lane" style="left:${LW}px"><div class="bar k-${s.kind} status-${s.status}" data-id="${s.spanId}" style="left:${left}%;width:${width}%" title="${esc(s.name)} · ${fmtDur(dur(s))}">${bl ? `<span class="bl">${esc(bl)}</span>` : ""}</div></div></div>`;
         }).join("");
         document.getElementById("twrap").innerHTML = axis + rows;
         document.querySelectorAll(".row").forEach((r) => r.addEventListener("click", () => select(r.dataset.id)));
+        if (selectedId) select(selectedId, true);
       }
 
       function select(id, keep) {
@@ -424,8 +449,66 @@
           s.attributes && s.attributes.errorType ? ["error", String(s.attributes.errorType), "red"] : null,
         ].filter(Boolean);
         const el = document.getElementById("details");
+        if (!el) return;
         el.className = "details on";
         el.innerHTML = `<div class="kv">${rows.map(([k, v, c]) => `<div><div class="k">${k}</div><div class="v ${c || ""}">${esc(String(v))}</div></div>`).join("")}</div>`;
+      }
+
+      function setGauge(id, frac) {
+        const el = document.getElementById(id); if (!el) return;
+        el.innerHTML = gauge();
+        requestAnimationFrame(() => { const n = el.querySelector(".needle"); if (n) n.style.transform = `rotate(${Math.max(0, Math.min(1, frac)) * 270}deg)`; });
+      }
+
+      // ---- navigator ----
+      const ICON = {
+        overview: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.4 12a5.6 5.6 0 0 1 11.2 0" stroke-linecap="round"/><path d="M8 12l3.1-3.7" stroke-linecap="round"/><circle cx="8" cy="12" r="1.1" fill="currentColor" stroke="none"/></svg>',
+        timeline: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="9.5" height="2.3" rx="1.1"/><rect x="4.5" y="6.9" width="8" height="2.3" rx="1.1"/><rect x="3" y="10.8" width="6.5" height="2.3" rx="1.1"/></svg>',
+        evals: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.6"/><circle cx="8" cy="8" r="2.4"/><circle cx="8" cy="8" r="0.3" fill="currentColor"/></svg>',
+      };
+      function availViews() { const v = []; if (SPANS.length) v.push("overview", "timeline"); if (EVALS.length) v.push("evals"); return v; }
+      function renderNav(R, E) {
+        const nav = document.getElementById("navigator");
+        const item = (id, label, stat) =>
+          `<div class="nav-item ${currentView === id ? "sel" : ""}" data-view="${id}"><span class="ico">${ICON[id]}</span><span class="nm">${label}</span><span class="stat">${stat}</span></div>`;
+        let html = "";
+        if (SPANS.length) {
+          html += `<div class="nav-grp"><div class="h">Run</div>${item("overview", "Overview", R ? fmtTok(R.tokens) : "")}${item("timeline", "Timeline", R ? fmtDur(R.total) : "")}</div>`;
+        }
+        if (EVALS.length) {
+          html += `<div class="nav-grp"><div class="h">Evaluation</div>${item("evals", "Evals", E ? E.overall.toFixed(1) : "")}</div>`;
+        }
+        html += `<div class="nav-foot">${META.live ? "live · streaming" : "static export"}<br/>rendered offline</div>`;
+        nav.innerHTML = html;
+        nav.querySelectorAll(".nav-item").forEach((el) => el.addEventListener("click", () => { currentView = el.dataset.view; render(); }));
+      }
+
+      function render() {
+        const avail = availViews();
+        const content = document.getElementById("content");
+        const live = document.getElementById("live"); live.className = "live" + (META.live ? " on" : "");
+        if (!avail.length) { document.getElementById("navigator").innerHTML = ""; content.innerHTML = '<div class="empty">Waiting for data…</div>'; return; }
+        if (!avail.includes(currentView)) currentView = avail[0];
+
+        const R = computeRun();
+        const E = computeEvals();
+
+        // header pills reflect whichever context leads: a run if present, else the eval suite.
+        if (R) {
+          document.getElementById("runid").textContent = (META.runId || SPANS[0].traceId || "").slice(0, 8);
+          const dp = document.getElementById("durpill"); dp.textContent = fmtDur(R.total) + " · " + SPANS.length + " spans";
+          const sp = document.getElementById("statuspill"); sp.textContent = R.runStatus; sp.className = "pill " + R.runStatus;
+        } else {
+          document.getElementById("runid").textContent = META.title || "eval suite";
+          document.getElementById("durpill").textContent = EVALS.length + " tasks judged";
+          const sp = document.getElementById("statuspill"); sp.textContent = E.flagged ? "review" : "ok"; sp.className = "pill " + (E.flagged ? "partial" : "ok");
+        }
+
+        renderNav(R, E);
+
+        if (currentView === "overview") { content.innerHTML = renderOverview(R); postOverview(R); }
+        else if (currentView === "timeline") { content.innerHTML = renderTimelineView(R); postTimeline(R); }
+        else if (currentView === "evals") { content.innerHTML = renderEvalsView(E); }
       }
 
       // ---- live mode ----

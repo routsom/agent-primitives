@@ -31,7 +31,7 @@ Most multi-agent starter kits are one of two traps: a **thin wrapper** around a 
 
 ## 📊 A built-in profiler, Instruments-style
 
-Run your agents and get a dashboard - no framework gives you this out of the box. Gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, per-agent tracks, and a full turn → agent → tool call waterfall. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
+Run your agents and get a dashboard - no framework gives you this out of the box. One app with an **Xcode-style left navigator**: gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, and per-agent tracks on **Overview**; the full turn → agent → tool call waterfall on **Timeline**. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
 
 ![agent-primitives profiler](.github/assets/profiler.png)
 
@@ -41,7 +41,7 @@ npm run profile                 # live: gauges fill in real time as the run exec
 # Python: uv run python -m examples.research_task   ·   PROFILER=live uv run python -m examples.research_task
 ```
 
-The same dashboard also visualizes your **LLM-as-judge evals** - a radar of average score per rubric criterion, pass rate, and a per-task score heatmap - filling in live as each task is judged:
+The same app carries an **Evals** view in the navigator - a radar of average score per rubric criterion, pass rate, and a per-task score heatmap - filling in live as each task is judged:
 
 ![agent-primitives eval dashboard](.github/assets/eval-dashboard.png)
 
