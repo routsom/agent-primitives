@@ -28,6 +28,11 @@
         "cachedInputTokens": { "type": "integer", "minimum": 0 }
       }
     },
+    "costUsd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "USD cost of this span (model calls only), derived from tokenUsage via specs/pricing.json. Estimate, not billing truth."
+    },
     "attributes": {
       "type": "object",
       "description": "Free-form key/value metadata (e.g. tool name, model id, provider)."

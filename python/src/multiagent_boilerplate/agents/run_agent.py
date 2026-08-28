@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..cost.pricing import compute_cost_usd
 from ..harness import (
     AgentRoleDef,
     AuditCorrelation,
@@ -136,10 +137,12 @@ async def run_agent(params: RunAgentParams) -> AgentResult:
         )
         if params.run_budget is not None:
             params.run_budget.record(result.usage)
+        cost = compute_cost_usd(params.model.provider, params.model.model, result.usage)
         params.tracer.end_span(
             model_span,
             "ok",
             token_usage={"inputTokens": result.usage.input_tokens, "outputTokens": result.usage.output_tokens},
+            cost_usd=cost,
         )
         messages.append(result.message)
 

@@ -23,6 +23,7 @@ RUN cd typescript && npm ci --omit=dev
 COPY --from=build /app/typescript/dist ./typescript/dist
 COPY specs/ ./specs/
 COPY reference/ ./reference/
+COPY dashboard/ ./dashboard/
 
 WORKDIR /app/typescript
 EXPOSE 8787

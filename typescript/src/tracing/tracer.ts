@@ -14,6 +14,8 @@ export interface TraceSpan {
   endedAt?: string;
   status: "ok" | "error" | "partial";
   tokenUsage?: TokenUsage;
+  /** USD cost of this span (model calls only), derived from tokenUsage via specs/pricing.json. */
+  costUsd?: number;
   attributes?: Record<string, unknown>;
 }
 
@@ -25,8 +27,15 @@ export interface TraceSpan {
 export class Tracer {
   readonly traceId = randomUUID();
   private readonly spans: TraceSpan[] = [];
+  private readonly listeners = new Set<(span: TraceSpan) => void>();
 
   constructor(private readonly onSpanEnd: (span: TraceSpan) => void = (span) => console.log(`[trace] ${JSON.stringify(span)}`)) {}
+
+  /** Subscribe to completed spans (e.g. the live dashboard server). Returns an unsubscribe fn. */
+  addListener(cb: (span: TraceSpan) => void): () => void {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  }
 
   startSpan(kind: TraceSpan["kind"], name: string, opts: { parentSpanId?: string | null; agentRole?: string; delegationDepth?: number } = {}): TraceSpan {
     const span: TraceSpan = {
@@ -44,13 +53,15 @@ export class Tracer {
     return span;
   }
 
-  endSpan(span: TraceSpan, status: TraceSpan["status"] = "ok", extra: Partial<Pick<TraceSpan, "tokenUsage" | "attributes">> = {}): void {
+  endSpan(span: TraceSpan, status: TraceSpan["status"] = "ok", extra: Partial<Pick<TraceSpan, "tokenUsage" | "costUsd" | "attributes">> = {}): void {
     span.endedAt = new Date().toISOString();
     span.status = status;
     if (extra.tokenUsage) span.tokenUsage = extra.tokenUsage;
+    if (extra.costUsd !== undefined) span.costUsd = extra.costUsd;
     if (extra.attributes) span.attributes = extra.attributes;
     validateTraceSpan(span);
     this.onSpanEnd(span);
+    for (const cb of this.listeners) cb(span);
   }
 
   allSpans(): readonly TraceSpan[] {

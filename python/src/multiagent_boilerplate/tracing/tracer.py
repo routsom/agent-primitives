@@ -30,6 +30,8 @@ class TraceSpan:
     status: SpanStatus = "ok"
     ended_at: str | None = None
     token_usage: dict | None = None
+    # USD cost of this span (model calls only), derived from token_usage via specs/pricing.json.
+    cost_usd: float | None = None
     attributes: dict | None = None
 
     def to_schema_dict(self) -> dict:
@@ -48,6 +50,8 @@ class TraceSpan:
             data["endedAt"] = self.ended_at
         if self.token_usage is not None:
             data["tokenUsage"] = self.token_usage
+        if self.cost_usd is not None:
+            data["costUsd"] = self.cost_usd
         if self.attributes is not None:
             data["attributes"] = self.attributes
         return data
@@ -62,6 +66,18 @@ class Tracer:
     on_span_end: Callable[[TraceSpan], None] = field(default=_default_on_span_end)
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     _spans: list[TraceSpan] = field(default_factory=list, init=False)
+    _listeners: list[Callable[[TraceSpan], None]] = field(default_factory=list, init=False)
+
+    def add_listener(self, cb: Callable[[TraceSpan], None]) -> Callable[[], None]:
+        """Subscribe to completed spans (e.g. the live dashboard server). Returns an
+        unsubscribe callable."""
+        self._listeners.append(cb)
+
+        def unsubscribe() -> None:
+            if cb in self._listeners:
+                self._listeners.remove(cb)
+
+        return unsubscribe
 
     def start_span(
         self,
@@ -90,15 +106,20 @@ class Tracer:
         status: SpanStatus = "ok",
         token_usage: dict | None = None,
         attributes: dict | None = None,
+        cost_usd: float | None = None,
     ) -> None:
         span.ended_at = datetime.now(UTC).isoformat()
         span.status = status
         if token_usage is not None:
             span.token_usage = token_usage
+        if cost_usd is not None:
+            span.cost_usd = cost_usd
         if attributes is not None:
             span.attributes = attributes
         validate_trace_span(span.to_schema_dict())
         self.on_span_end(span)
+        for cb in list(self._listeners):
+            cb(span)
 
     def all_spans(self) -> list[TraceSpan]:
         return list(self._spans)

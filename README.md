@@ -29,6 +29,20 @@ Most multi-agent starter kits are one of two traps: a **thin wrapper** around a 
 
 ---
 
+## 📊 A built-in profiler, Instruments-style
+
+Run your agents and get a dashboard - no framework gives you this out of the box. Gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, per-agent tracks, and a full turn → agent → tool call waterfall. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
+
+![agent-primitives profiler](.github/assets/profiler.png)
+
+```bash
+npm run example:research        # writes a dashboard.html and opens it
+npm run profile                 # live: gauges fill in real time as the run executes
+# Python: uv run python -m examples.research_task   ·   PROFILER=live uv run python -m examples.research_task
+```
+
+---
+
 ## 🧠 Why not just use a framework?
 
 |  | LangGraph / CrewAI / AutoGen | Thin SDK wrapper | **agent-primitives** |
@@ -37,6 +51,7 @@ Most multi-agent starter kits are one of two traps: a **thin wrapper** around a 
 | **Multi-LLM** | routing library | one vendor | **thin adapters over official SDKs** |
 | **Swap the model** | fight the abstraction | rewrite it | **1 line** |
 | **Retry · budgets · circuit breakers · audit** | partial, buried | roll your own | **built in, deterministic** |
+| **Profiler dashboard + $ cost** | ❌ | ❌ | **Instruments-style, static or live** |
 | **Read the whole thing in an afternoon** | ❌ | ✅ | ✅ |
 | **TypeScript *and* Python** | rarely | pick one | **both, provably in parity** |
 | **Escape cost later** | high | low | **it's just your code** |

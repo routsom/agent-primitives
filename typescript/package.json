@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "example:research": "tsx examples/research-task/index.ts",
     "example:single-agent": "tsx examples/single-agent/index.ts",
+    "profile": "PROFILER=live tsx examples/research-task/index.ts",
     "eval": "tsx src/evals/runEval.ts"
   },
   "dependencies": {

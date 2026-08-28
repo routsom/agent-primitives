@@ -31,6 +31,7 @@ export default defineConfig({
             { label: "Providers (multi-LLM)", link: "/providers/" },
             { label: "Harness", link: "/harness/" },
             { label: "Reliability & guarantees", link: "/reliability/" },
+            { label: "Profiler & cost", link: "/profiler/" },
             { label: "MCP", link: "/mcp/" },
             { label: "A2A", link: "/a2a/" },
             { label: "Tracing & audit", link: "/tracing/" },

@@ -1,0 +1,9 @@
+{
+  "_comment": "Approximate USD list prices per 1M tokens, keyed by 'provider:model'. EDIT THESE to match your contract - they are estimates for the profiler's cost view, not billing truth. cachedInputPerMTok applies to Anthropic prompt-cache reads. Unknown keys fall back to zero cost (shown as an estimate). The mock provider is 0 so offline runs cost nothing; set MOCK_PRICE_AS=provider:model to price mock tokens at a real model's rate for a realistic demo.",
+  "anthropic:claude-sonnet-5": { "inputPerMTok": 3.0, "outputPerMTok": 15.0, "cachedInputPerMTok": 0.3 },
+  "anthropic:claude-opus-4-8": { "inputPerMTok": 15.0, "outputPerMTok": 75.0, "cachedInputPerMTok": 1.5 },
+  "anthropic:claude-haiku-4-5": { "inputPerMTok": 1.0, "outputPerMTok": 5.0, "cachedInputPerMTok": 0.1 },
+  "openai:gpt-5": { "inputPerMTok": 5.0, "outputPerMTok": 15.0 },
+  "google:gemini-3-pro": { "inputPerMTok": 2.5, "outputPerMTok": 10.0 },
+  "mock:mock-deterministic-1": { "inputPerMTok": 0.0, "outputPerMTok": 0.0 }
+}

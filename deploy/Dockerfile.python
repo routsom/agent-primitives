@@ -15,6 +15,7 @@ RUN cd python && uv sync --locked --no-dev
 
 COPY specs/ ./specs/
 COPY reference/ ./reference/
+COPY dashboard/ ./dashboard/
 
 WORKDIR /app/python
 ENV PATH="/app/python/.venv/bin:$PATH"

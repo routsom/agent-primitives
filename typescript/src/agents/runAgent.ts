@@ -4,6 +4,7 @@ import { RunBudget, ToolCallBudget, classifyError, loadAgentRole, loadPrompt, ty
 import type { AgentRoleDef } from "../harness/scope.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
+import { computeCostUsd } from "../cost/pricing.js";
 import { deriveReviewFlags } from "./review.js";
 import type { AgentResult } from "./types.js";
 
@@ -89,7 +90,8 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
       tools: params.harness.toolDefinitions(role),
     });
     params.runBudget?.record(result.usage);
-    params.tracer.endSpan(modelSpan, "ok", { tokenUsage: result.usage });
+    const costUsd = computeCostUsd(params.model.provider, params.model.model, result.usage);
+    params.tracer.endSpan(modelSpan, "ok", { tokenUsage: result.usage, costUsd });
     messages.push(result.message);
 
     if (result.stopReason !== "tool_use") {

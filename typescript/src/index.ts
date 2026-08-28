@@ -22,3 +22,6 @@ export { startA2AServer } from "./a2a/server.js";
 export { fetchAgentCard, delegateToRemoteAgent } from "./a2a/client.js";
 export { buildAgentCard } from "./a2a/agentCard.js";
 export { runJudge } from "./evals/judge.js";
+export { computeCostUsd, priceKey } from "./cost/pricing.js";
+export { writeDashboard, renderDashboard, maybeOpen } from "./tracing/dashboard.js";
+export { startDashboardServer } from "./tracing/dashboardServer.js";
