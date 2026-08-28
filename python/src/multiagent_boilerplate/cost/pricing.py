@@ -39,7 +39,5 @@ def compute_cost_usd(provider: str, model: str, usage: TokenUsage) -> float:
     fresh_input = max(0, usage.input_tokens - cached)
     cached_rate = price.get("cachedInputPerMTok", price["inputPerMTok"])
     return (
-        fresh_input * price["inputPerMTok"]
-        + cached * cached_rate
-        + usage.output_tokens * price["outputPerMTok"]
+        fresh_input * price["inputPerMTok"] + cached * cached_rate + usage.output_tokens * price["outputPerMTok"]
     ) / 1_000_000
