@@ -128,7 +128,7 @@ async def main() -> None:
         outcome = await flaky.execute(_LEAD_ROLE, _call(f"call-{fail_mode}"), runtime)
         if outcome.error:
             err = outcome.error
-            print(f'\n3) framework threw a {fail_mode} error')
+            print(f"\n3) framework threw a {fail_mode} error")
             print(f'   -> harness classified it "{err.type}", retryable={err.retryable}')
 
     print(
