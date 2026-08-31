@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { runSubagent } from "../agents/subagent.js";
 import type { AgentResult, AgentTask } from "../agents/types.js";
 import { LocalArtifactStore, type ArtifactRef, type ArtifactStore, type WriteArtifactInput } from "../artifacts/store.js";
@@ -5,6 +6,7 @@ import type { HarnessCaps } from "../config/index.js";
 import { assertDepthWithinCap, assertSubagentCountWithinCap, validateAgentTask } from "../harness/index.js";
 import type { Harness, RunBudget } from "../harness/index.js";
 import { PlanMemory, type PlanStore } from "../memory/planMemory.js";
+import { CheckpointMemory, type CheckpointStore } from "./checkpoint.js";
 import type { ChatModel } from "../providers/types.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
@@ -25,6 +27,9 @@ export interface OrchestratorOptions {
   /** Override the default local-filesystem stores with your own backend (S3, a database, etc.). */
   artifactStore?: ArtifactStore;
   planStore?: PlanStore;
+  checkpointStore?: CheckpointStore;
+  /** Where the default local checkpoint store writes. Defaults to `<artifactStoreDir>/checkpoints`. */
+  checkpointDir?: string;
 }
 
 export interface SpawnSubagentsResult {
@@ -41,11 +46,13 @@ export interface SpawnSubagentsResult {
 export class Orchestrator implements ToolRuntime {
   private readonly artifactStore: ArtifactStore;
   private readonly planMemory: PlanStore;
+  private readonly checkpointStore: CheckpointStore;
   private readonly subagentRetries: number;
 
   constructor(private readonly opts: OrchestratorOptions) {
     this.artifactStore = opts.artifactStore ?? new LocalArtifactStore(opts.artifactStoreDir);
     this.planMemory = opts.planStore ?? new PlanMemory(opts.planMemoryDir);
+    this.checkpointStore = opts.checkpointStore ?? new CheckpointMemory(opts.checkpointDir ?? join(opts.artifactStoreDir, "checkpoints"));
     this.subagentRetries = opts.subagentRetries ?? 2;
   }
 
@@ -58,7 +65,7 @@ export class Orchestrator implements ToolRuntime {
       return raw as AgentTask;
     });
 
-    const results = await Promise.all(tasks.map((task) => this.runWithRetry(task, depth)));
+    const results = await Promise.all(tasks.map((task) => this.runOrRestore(task, depth)));
     const partial = results.some((r) => r.status !== "ok");
     return { results, partial };
   }
@@ -77,6 +84,32 @@ export class Orchestrator implements ToolRuntime {
 
   async loadPlan(): Promise<unknown | undefined> {
     return this.planMemory.load(this.opts.runId);
+  }
+
+  /**
+   * Durable, resumable execution (notes section 12). Before running a subagent, look for a
+   * checkpoint from an earlier attempt at this same runId; if one exists the work is restored
+   * instead of recomputed - a resumed swarm re-runs only the tasks that never finished. A
+   * successful result is checkpointed so the next resume skips it. Only 'ok' results are
+   * checkpointed: a partial or errored result is deliberately left uncheckpointed so it re-runs.
+   */
+  private async runOrRestore(task: AgentTask, depth: number): Promise<AgentResult> {
+    const restored = await this.checkpointStore.load(this.opts.runId, task.taskId);
+    if (restored) {
+      // Emit a subagent-level span so a resumed run's trace still shows this unit of work,
+      // flagged as restored rather than executed. Fresh runs never hit this path.
+      const span = this.opts.tracer.startSpan("agent", `${task.role}:${task.taskId}`, {
+        parentSpanId: this.opts.parentSpanId ?? null,
+        agentRole: task.role,
+        delegationDepth: depth,
+      });
+      this.opts.tracer.endSpan(span, "ok", { attributes: { restoredFromCheckpoint: true } });
+      return restored;
+    }
+
+    const result = await this.runWithRetry(task, depth);
+    if (result.status === "ok") await this.checkpointStore.save(this.opts.runId, task.taskId, result);
+    return result;
   }
 
   private async runWithRetry(task: AgentTask, depth: number, attemptsLeft = this.subagentRetries): Promise<AgentResult> {

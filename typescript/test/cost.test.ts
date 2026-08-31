@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { computeCostUsd, priceKey } from "../src/cost/pricing.js";
+import { summarizeCost, formatCostSummary } from "../src/cost/ledger.js";
 import { renderDashboard } from "../src/tracing/dashboard.js";
 import type { TraceSpan } from "../src/tracing/tracer.js";
 
@@ -35,6 +36,53 @@ describe("cost computation", () => {
 
   it("priceKey joins provider and model", () => {
     expect(priceKey("openai", "gpt-5")).toBe("openai:gpt-5");
+  });
+});
+
+describe("cost ledger (summarize from spans)", () => {
+  const modelCall = (agent: string, model: string, inTok: number, outTok: number, cost: number): TraceSpan => ({
+    spanId: `s-${Math.random()}`,
+    traceId: "t",
+    parentSpanId: null,
+    kind: "model_call",
+    name: `${agent} turn 0`,
+    agentRole: agent,
+    delegationDepth: 0,
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    status: "ok",
+    tokenUsage: { inputTokens: inTok, outputTokens: outTok },
+    costUsd: cost,
+    attributes: { model },
+  });
+
+  it("totals cost and tokens across only model_call spans, broken down by model and agent", () => {
+    const spans: TraceSpan[] = [
+      modelCall("lead", "anthropic:claude-opus-4-8", 100, 50, 0.01),
+      modelCall("subagent", "anthropic:claude-sonnet-5", 200, 80, 0.004),
+      modelCall("subagent", "anthropic:claude-sonnet-5", 300, 20, 0.006),
+      // A non-model span carries no spend and must be ignored.
+      { ...modelCall("lead", "x", 999, 999, 999), kind: "tool_call" },
+    ];
+    const summary = summarizeCost(spans);
+
+    expect(summary.total.calls).toBe(3);
+    expect(summary.total.inputTokens).toBe(600);
+    expect(summary.total.outputTokens).toBe(150);
+    expect(summary.total.costUsd).toBeCloseTo(0.02, 6);
+
+    expect(summary.byModel["anthropic:claude-sonnet-5"]?.calls).toBe(2);
+    expect(summary.byModel["anthropic:claude-sonnet-5"]?.costUsd).toBeCloseTo(0.01, 6);
+    expect(summary.byAgent["subagent"]?.costUsd).toBeCloseTo(0.01, 6);
+    expect(summary.byAgent["lead"]?.calls).toBe(1);
+  });
+
+  it("renders a readable summary string", () => {
+    const summary = summarizeCost([modelCall("lead", "anthropic:claude-opus-4-8", 100, 50, 0.01)]);
+    const text = formatCostSummary(summary);
+    expect(text).toContain("Run cost:");
+    expect(text).toContain("anthropic:claude-opus-4-8");
+    expect(text).toContain("lead");
   });
 });
 

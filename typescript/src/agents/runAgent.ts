@@ -5,6 +5,7 @@ import type { AgentRoleDef } from "../harness/scope.js";
 import type { ToolRuntime } from "../tools/types.js";
 import type { Tracer } from "../tracing/tracer.js";
 import { computeCostUsd } from "../cost/pricing.js";
+import type { Compactor } from "./compaction.js";
 import { deriveReviewFlags } from "./review.js";
 import type { AgentResult } from "./types.js";
 
@@ -34,6 +35,8 @@ export interface RunAgentParams {
   maxTurns?: number;
   /** Shared across the whole run (lead + every subagent). When exhausted, the agent stops before its next model call. */
   runBudget?: RunBudget;
+  /** Optional context compaction. When set, the message history is compacted before each model call once it exceeds the compactor's threshold. Off by default. */
+  compactor?: Compactor;
 }
 
 /**
@@ -48,7 +51,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const budget = new ToolCallBudget(role.role, role.budget.maxToolCalls);
   const maxTurns = params.maxTurns ?? role.budget.maxToolCalls + 2;
 
-  const messages: ProviderMessage[] = [{ role: "user", content: [{ type: "text", text: params.userPrompt }] }];
+  let messages: ProviderMessage[] = [{ role: "user", content: [{ type: "text", text: params.userPrompt }] }];
   const artifactRefs: AgentResult["artifactRefs"] = [];
   // Errors returned to the model but not subsequently recovered from feed the deterministic
   // needs_review derivation (notes section 16a). Tracked here, evaluated at return.
@@ -78,6 +81,10 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
       return finish("partial", "(stopped: run token budget exhausted)");
     }
 
+    // Context compaction (off unless a compactor is supplied): collapse the older middle of the
+    // history to a summary once it exceeds the compactor's threshold, before spending on the call.
+    if (params.compactor) messages = await params.compactor.maybeCompact(messages);
+
     const modelSpan = params.tracer.startSpan("model_call", `${role.role} turn ${turn}`, {
       parentSpanId: agentSpan.spanId,
       agentRole: role.role,
@@ -91,7 +98,9 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     });
     params.runBudget?.record(result.usage);
     const costUsd = computeCostUsd(params.model.provider, params.model.model, result.usage);
-    params.tracer.endSpan(modelSpan, "ok", { tokenUsage: result.usage, costUsd });
+    // Tag the span with the concrete model so the cost ledger can break spend down per model,
+    // not just per agent. Attributes are ignored by the parity check, so this is parity-safe.
+    params.tracer.endSpan(modelSpan, "ok", { tokenUsage: result.usage, costUsd, attributes: { model: `${params.model.provider}:${params.model.model}` } });
     messages.push(result.message);
 
     if (result.stopReason !== "tool_use") {

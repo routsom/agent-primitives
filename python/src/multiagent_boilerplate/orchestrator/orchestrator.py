@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from ..agents.subagent import run_subagent
@@ -23,6 +24,7 @@ from ..harness import (
 from ..memory.plan_memory import PlanMemory, PlanStore
 from ..providers.types import ChatModel
 from ..tracing.tracer import Tracer
+from .checkpoint import CheckpointMemory, CheckpointStore
 
 
 @dataclass
@@ -41,6 +43,9 @@ class OrchestratorOptions:
     # Override the default local-filesystem stores with your own backend (S3, a database, etc.).
     artifact_store: ArtifactStore | None = None
     plan_store: PlanStore | None = None
+    checkpoint_store: CheckpointStore | None = None
+    # Where the default local checkpoint store writes. Defaults to `<artifact_store_dir>/checkpoints`.
+    checkpoint_dir: str | None = None
 
 
 class Orchestrator:
@@ -48,6 +53,9 @@ class Orchestrator:
         self._opts = opts
         self._artifact_store: ArtifactStore = opts.artifact_store or LocalArtifactStore(opts.artifact_store_dir)
         self._plan_memory: PlanStore = opts.plan_store or PlanMemory(opts.plan_memory_dir)
+        self._checkpoint_store: CheckpointStore = opts.checkpoint_store or CheckpointMemory(
+            opts.checkpoint_dir or str(Path(opts.artifact_store_dir) / "checkpoints")
+        )
 
     async def spawn_subagents(self, raw_tasks: list[dict], depth: int) -> dict[str, Any]:
         assert_subagent_count_within_cap(len(raw_tasks), self._opts.caps.max_subagents)
@@ -58,7 +66,7 @@ class Orchestrator:
             validate_agent_task(raw)
             tasks.append(AgentTask.from_schema_dict(raw))
 
-        results = await asyncio.gather(*(self._run_with_retry(task, depth) for task in tasks))
+        results = await asyncio.gather(*(self._run_or_restore(task, depth) for task in tasks))
         partial = any(r.status != "ok" for r in results)
         # Cross the tool-result boundary as plain dicts, not dataclass instances - provider
         # adapters serialize tool output to JSON/text, mirroring the TS runtime where
@@ -76,6 +84,31 @@ class Orchestrator:
 
     async def load_plan(self) -> Any | None:
         return await self._plan_memory.load(self._opts.run_id)
+
+    async def _run_or_restore(self, task: AgentTask, depth: int) -> AgentResult:
+        """Durable, resumable execution (notes section 12). Before running a subagent, look for a
+        checkpoint from an earlier attempt at this same run_id; if one exists the work is restored
+        instead of recomputed - a resumed swarm re-runs only the tasks that never finished. A
+        successful result is checkpointed so the next resume skips it. Only 'ok' results are
+        checkpointed: a partial or errored result is deliberately left uncheckpointed so it re-runs."""
+        restored = await self._checkpoint_store.load(self._opts.run_id, task.task_id)
+        if restored is not None:
+            # Emit a subagent-level span so a resumed run's trace still shows this unit of work,
+            # flagged as restored rather than executed. Fresh runs never hit this path.
+            span = self._opts.tracer.start_span(
+                "agent",
+                f"{task.role}:{task.task_id}",
+                parent_span_id=self._opts.parent_span_id,
+                agent_role=task.role,
+                delegation_depth=depth,
+            )
+            self._opts.tracer.end_span(span, "ok", attributes={"restoredFromCheckpoint": True})
+            return restored
+
+        result = await self._run_with_retry(task, depth)
+        if result.status == "ok":
+            await self._checkpoint_store.save(self._opts.run_id, task.task_id, result)
+        return result
 
     async def _run_with_retry(self, task: AgentTask, depth: int, attempts_left: int | None = None) -> AgentResult:
         attempts_left = self._opts.subagent_retries if attempts_left is None else attempts_left

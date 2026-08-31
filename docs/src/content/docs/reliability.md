@@ -103,6 +103,25 @@ before it reaches the model - the *seam* where app-specific rules go (strip inje
 instructions, scrub PII). The default is identity; the rules are yours because they can't be
 generic. It is never an LLM call on the safety path.
 
+## Human-in-the-loop approval gate
+
+Some tool calls are too consequential to let a model make unsupervised. A `ToolApprovalGate`
+marks specific tools as requiring approval; the harness consults your resolver before executing,
+and a denial comes back as a classified `auth` rejection - the tool never runs. Like scope and
+budgets, the gate lives in the harness, so it's a guarantee no prompt can route around, and the
+resolver composes with [durable execution](#durable-execution---surviving-a-crash-mid-run) for
+suspend-and-resume. Default is `AutoApprove` (gates nothing). See [Extending it](/extending/#human-in-the-loop-approvalprovider).
+
+## Durable execution - surviving a crash mid-run
+
+The reliability machinery above keeps a single run *inside* its guarantees; durable execution
+handles the run *dying*. The orchestrator checkpoints each subagent that completes successfully,
+keyed by `(runId, taskId)`. Resume by re-invoking with the same `runId`: completed subagents are
+restored from their checkpoints and only the unfinished ones re-run, so a crash on subagent 5 of
+6 costs you subagent 5, not the whole swarm. Only `ok` results are checkpointed - a `partial` or
+`error` result re-runs on resume rather than freezing a bad outcome. The store is the pluggable
+`CheckpointStore` seam (local files by default); see [Extending it](/extending/#durable--resumable-execution-checkpointstore).
+
 ## Where the guarantees are configured
 
 All of these are options on the `Harness` and `Orchestrator` (and env vars via `config`) - see

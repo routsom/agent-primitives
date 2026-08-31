@@ -2,7 +2,7 @@
 
 # ⚡ agent-primitives
 
-### Production multi-agent systems, without a framework hijacking your control loop.
+### Production multi-agent systems, without surrendering your control loop.
 
 One clone. **Two runtimes** (TypeScript + Python). **Zero API keys** to watch it run.
 
@@ -10,7 +10,7 @@ One clone. **Two runtimes** (TypeScript + Python). **Zero API keys** to watch it
 [![CI - Python](https://github.com/routsom/agent-primitives/actions/workflows/ci-py.yml/badge.svg)](https://github.com/routsom/agent-primitives/actions/workflows/ci-py.yml)
 [![Parity](https://github.com/routsom/agent-primitives/actions/workflows/parity.yml/badge.svg)](https://github.com/routsom/agent-primitives/actions/workflows/parity.yml)
 [![Docs](https://github.com/routsom/agent-primitives/actions/workflows/docs.yml/badge.svg)](https://routsom.github.io/agent-primitives/)
-![Tests](https://img.shields.io/badge/tests-79%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-123%20passing-brightgreen)
 ![Runtimes](https://img.shields.io/badge/runtimes-TypeScript%20%2B%20Python-3178C6)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -35,12 +35,17 @@ Most multi-agent starter kits are one of two traps: a **thin wrapper** around a 
 | **Multi-LLM** | routing library | one vendor | **thin adapters over official SDKs** |
 | **Swap the model** | fight the abstraction | rewrite it | **1 line** |
 | **Retry · budgets · circuit breakers · audit** | partial, buried | roll your own | **built in, deterministic** |
-| **Profiler dashboard + $ cost** | ❌ | ❌ | **Instruments-style, static or live** |
+| **Durable / resumable runs** | engine-specific | roll your own | **checkpoint + resume, pluggable store** |
+| **Human-in-the-loop approval** | callback soup | roll your own | **harness gate, no prompt routes around it** |
+| **Deterministic replay (tests)** | rarely | ❌ | **record/replay cassette, zero-token CI** |
+| **Profiler dashboard + $ cost** | add-on | ❌ | **Instruments-style, static or live** |
 | **Read the whole thing in an afternoon** | ❌ | ✅ | ✅ |
 | **TypeScript *and* Python** | rarely | pick one | **both, provably in parity** |
 | **Escape cost later** | high | low | **it's just your code** |
 
-No LangChain. No CrewAi. No AutoGen. No routing library. [Here's exactly why](DESIGN.md#why-no-orchestration-framework).
+No LangChain. No CrewAI. No AutoGen. No routing library. [Here's exactly why](DESIGN.md#why-no-orchestration-framework).
+
+**This is not an anti-framework crusade.** Frameworks exist because building agents from scratch is hard, and they solve real problems - reach for one when prototyping speed matters more than control. The honest trade-off: you can't control the model, its rate limits, or its pricing, so don't pretend to. You *can* own the orchestration, budgets, error policy, and audit trail around it - and `agent-primitives` is what you own when a framework stops fitting. More control means more responsibility: reliability, security, and evolution become *your* readable code instead of someone else's abstraction. And frameworks are welcome *underneath* the line - a LangGraph graph or CrewAI crew plugs in as one governed tool call ([`examples/framework-interop`](typescript/examples/framework-interop)), never running your loop.
 
 ---
 
@@ -68,6 +73,12 @@ Both run on a **deterministic mock provider out of the box** - no API key, no ac
 
 - **🔀 Multi-LLM, no routing library.** Hand-rolled adapters over each vendor's *official* SDK (Anthropic, OpenAI, Gemini) behind one `ChatModel` interface. Swapping providers is a config value, not a rewrite.
 - **🛡️ Guarantees, not vibes.** Error classification (`transient · permanent · validation · auth`), a session-wide token budget, provider timeout+retry+fallback, per-tool circuit breakers, and a 100%-coverage audit log - all deterministic harness code with tests. The model decides *what*; the harness decides *whether it's allowed*.
+- **💾 Durable, resumable runs.** A subagent is the expensive unit of work, so it's the checkpoint unit: finish one and it's persisted; if the swarm dies partway, re-invoke with the same `runId` and only the unfinished subagents re-run - the rest are restored from their checkpoints (and shown as restored in the trace). The store is a pluggable `CheckpointStore` seam - local files by default, your database or a workflow engine in production.
+- **🔗 Frameworks plug in *underneath*.** Already built an agent in LangGraph or CrewAI? Mount it as one governed tool call so it inherits your scoping, budgets, error classification, and tracing - it runs its own loop inside yours, never instead of it. See [`examples/framework-interop`](typescript/examples/framework-interop).
+- **📼 Deterministic replay (VCR).** Wrap any provider to record responses to a cassette keyed by request hash, then replay them offline - regression-test the orchestration logic with zero tokens and reproduce a production failure exactly. It's a `ChatModel` decorator, so nothing above the provider layer knows.
+- **🙋 Human-in-the-loop, in the harness.** Flag a consequential tool (a payment, a destructive write) and it can't execute without an explicit approval - the gate sits next to scope and budgets so no prompt routes around it. The approve/deny resolver is a seam that composes with checkpoints for suspend-and-resume.
+- **🧮 Per-run cost ledger.** Total dollar spend plus a breakdown by model and by agent role, reduced from the trace every run already emits - "what did this run cost, and where?" is one function call, not a spreadsheet.
+- **🗜️ Context compaction.** When an agent's history nears the window, collapse the older middle to a summary while keeping the task and recent turns - a primitive a prompt can't self-enforce, with a pluggable (LLM or model-free) summarizer. Off until you enable it.
 - **🔌 MCP + A2A wired in, not bolted on.** Mount external MCP servers as tools; expose your agents over Agent-to-Agent with bearer-token auth and rate limiting **at the edge**, before a single token is spent.
 - **⚖️ Two runtimes that can't drift.** TypeScript and Python read the *same* `specs/` contracts, and a CI parity check runs the same task in both and diffs the trace tree. Neither language is a second-class citizen.
 - **🔍 Review that costs nothing.** `needs_review` is derived from the trace structure (partial completion, unrecovered errors, truncation) - deterministically, with zero extra LLM calls. Your judge gets *triggered* by it, not billed for it.
@@ -109,14 +120,14 @@ Full sequence + flow diagrams live in the **[docs site](https://routsom.github.i
 
 | Layer | What it does |
 |---|---|
-| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs + a mock; resilience decorator (timeout · retry · fallback) |
-| `harness/` | The guarantees layer: scoping, idempotency, error classification, budgets, circuit breaker, rate limiting, audit log, boundary guardrail |
-| `agents/` | Lead agent, parallel subagents, citation agent + deterministic `needs_review` derivation |
-| `orchestrator/` | Synchronous fan-out/fan-in; depth + retry breakers; session token budget; explicit partial-completion policy |
+| `providers/` | `ChatModel` adapters over Anthropic / OpenAI / Gemini official SDKs + a mock; resilience decorator (timeout · retry · fallback); **record/replay (VCR)** decorator |
+| `harness/` | The guarantees layer: scoping, idempotency, error classification, budgets, circuit breaker, rate limiting, audit log, boundary guardrail, **human-in-the-loop approval gate** |
+| `agents/` | Lead agent, parallel subagents, citation agent + deterministic `needs_review` derivation; **context compaction** |
+| `orchestrator/` | Synchronous fan-out/fan-in; depth + retry breakers; session token budget; explicit partial-completion policy; **checkpoint + resume** of completed subagents |
 | `tools/` · `mcp/` | Typed tool contract with a classified error envelope; MCP client **and** server |
 | `a2a/` | Agent-to-Agent server (auth + rate limit) and client |
-| `memory/` · `artifacts/` | Plan + artifact stores behind pluggable `PlanStore` / `ArtifactStore` seams |
-| `tracing/` | Nested spans (turn → agent → call), OTLP export seam, separate 100% audit stream |
+| `memory/` · `artifacts/` | Plan, artifact, and checkpoint stores behind pluggable `PlanStore` / `ArtifactStore` / `CheckpointStore` seams |
+| `cost/` · `tracing/` | Nested spans (turn → agent → call), OTLP export seam, 100% audit stream; **per-run cost ledger** (total + by model + by agent) |
 | `evals/` | LLM-as-judge rubric; structural review flags *trigger* the judge |
 
 Every layer exists in **both** `typescript/` and `python/`, reading shared contracts from `specs/`.
@@ -127,7 +138,7 @@ Every layer exists in **both** `typescript/` and `python/`, reading shared contr
 
 ## 📊 A built-in profiler, Instruments-style
 
-Run your agents and get a dashboard - no framework gives you this out of the box. One app with an **Xcode-style left navigator**: gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, and per-agent tracks on **Overview**; the full turn → agent → tool call waterfall on **Timeline**. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
+Run your agents and get a dashboard - all of it together, from the trace you already emit, as readable code you own. One app with an **Xcode-style left navigator**: gauges for tokens and **real dollar cost**, a token-distribution donut, tokens/cost over time, and per-agent tracks on **Overview**; the full turn → agent → tool call waterfall on **Timeline**. It renders from the trace every run already emits, as a **self-contained HTML file** (zero deps, opens offline) or a **live view that updates in real time** while the run executes.
 
 ![agent-primitives profiler](.github/assets/profiler.png)
 
@@ -150,7 +161,7 @@ npm run eval:profile            # live eval dashboard   (static: npm run eval)
 ## 🎯 Built for solo devs *and* enterprises
 
 - **Solo / small team:** clone, run the mock example, drop in one provider key, ship. No account, no platform, no lock-in.
-- **Enterprise:** least-privilege per-role tool scoping, a deterministic audit trail, provider/region failover, session spend ceilings, and OTLP-shaped tracing that drops into your existing observability stack. What's *not* baked in (kill-switch control plane, canary rollout, cross-session memory) is documented as [extension points](https://routsom.github.io/agent-primitives/extending/) with the seam already there - so you wire it your way instead of escaping ours.
+- **Enterprise:** least-privilege per-role tool scoping, a deterministic audit trail, provider/region failover, session spend ceilings, resumable runs behind a `CheckpointStore` seam, and OTLP-shaped tracing that drops into your existing observability stack. What's *not* baked in (kill-switch control plane, canary rollout, cross-session memory) is documented as [extension points](https://routsom.github.io/agent-primitives/extending/) with the seam already there - so you wire it your way instead of escaping ours.
 
 ---
 
