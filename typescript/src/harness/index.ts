@@ -1,11 +1,13 @@
 import type { Tool, ToolRuntime } from "../tools/types.js";
+import { AutoApprove, type ApprovalProvider } from "./approvals.js";
 import { NoopAuditSink, redact, type AuditCorrelation, type AuditSink } from "./audit.js";
 import { ToolCircuitBreaker, type CircuitBreakerOptions } from "./circuitBreaker.js";
-import { ClassifiedError, classifyError, ValidationFailure, type ToolOutcome } from "./errors.js";
+import { AuthFailure, ClassifiedError, classifyError, ValidationFailure, type ToolOutcome } from "./errors.js";
 import { IdempotencyCache } from "./idempotency.js";
 import type { AgentRoleDef } from "./scope.js";
 import { assertToolAllowed } from "./scope.js";
 
+export * from "./approvals.js";
 export * from "./scope.js";
 export * from "./budget.js";
 export * from "./idempotency.js";
@@ -31,6 +33,8 @@ export interface HarnessOptions {
   circuitBreaker?: Partial<CircuitBreakerOptions>;
   /** Applied to every tool's output before it returns to the model. Default: identity. */
   sanitize?: Sanitizer;
+  /** Human-in-the-loop gate for consequential tools. Default: AutoApprove (gates nothing). */
+  approvals?: ApprovalProvider;
 }
 
 export interface HarnessToolCall {
@@ -55,12 +59,14 @@ export class Harness {
   private readonly auditSink: AuditSink;
   private readonly breaker: ToolCircuitBreaker;
   private readonly sanitize: Sanitizer;
+  private readonly approvals: ApprovalProvider;
 
   constructor(tools: Tool[], options: HarnessOptions = {}) {
     for (const tool of tools) this.tools.set(tool.name, tool);
     this.auditSink = options.auditSink ?? new NoopAuditSink();
     this.breaker = new ToolCircuitBreaker(options.circuitBreaker);
     this.sanitize = options.sanitize ?? identitySanitizer;
+    this.approvals = options.approvals ?? new AutoApprove();
   }
 
   async execute(role: AgentRoleDef, call: HarnessToolCall, runtime: ToolRuntime): Promise<ToolOutcome> {
@@ -100,6 +106,22 @@ export class Harness {
     // immediately as a transient error rather than piling on another timeout.
     if (this.breaker.isOpen(call.toolName)) {
       return { status: "rejected", error: classifyError(new ClassifiedError("transient", `tool "${call.toolName}" circuit is open`)) };
+    }
+
+    // Human-in-the-loop gate: a consequential tool cannot run without an explicit approval. A
+    // denial is an authorization decision (classifies as `auth`: no retry, security-logged), so
+    // the tool never executes. Pre-execution, so it counts as `rejected`, not `error`.
+    if (this.approvals.requiresApproval(role.role, call.toolName)) {
+      const decision = await this.approvals.decide({
+        role: role.role,
+        toolName: call.toolName,
+        input: call.input,
+        idempotencyKey: call.idempotencyKey,
+        delegationDepth: call.delegationDepth,
+      });
+      if (decision !== "approved") {
+        return { status: "rejected", error: classifyError(new AuthFailure(`tool "${call.toolName}" denied by approval gate`)) };
+      }
     }
 
     // Post-execution failures classify as `error` (the tool ran and threw).

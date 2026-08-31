@@ -33,6 +33,7 @@ from ..providers.types import (
 )
 from ..tools.types import ToolRuntime
 from ..tracing.tracer import Tracer
+from .compaction import Compactor
 from .review import ReviewSignals, derive_review_flags
 from .types import AgentResult
 
@@ -66,6 +67,9 @@ class RunAgentParams:
     # Shared across the whole run (lead + every subagent). When exhausted, the agent stops
     # before its next model call.
     run_budget: RunBudget | None = None
+    # Optional context compaction. When set, the message history is compacted before each model
+    # call once it exceeds the compactor's threshold. Off by default.
+    compactor: Compactor | None = None
 
 
 async def run_agent(params: RunAgentParams) -> AgentResult:
@@ -124,6 +128,11 @@ async def run_agent(params: RunAgentParams) -> AgentResult:
             params.tracer.end_span(agent_span, "partial", attributes={"stoppedReason": "run_budget_exhausted"})
             return finish("partial", "(stopped: run token budget exhausted)")
 
+        # Context compaction (off unless a compactor is supplied): collapse the older middle of
+        # the history to a summary once it exceeds the threshold, before spending on the call.
+        if params.compactor is not None:
+            messages = await params.compactor.maybe_compact(messages)
+
         model_span = params.tracer.start_span(
             "model_call",
             f"{role.role} turn {turn}",
@@ -138,11 +147,14 @@ async def run_agent(params: RunAgentParams) -> AgentResult:
         if params.run_budget is not None:
             params.run_budget.record(result.usage)
         cost = compute_cost_usd(params.model.provider, params.model.model, result.usage)
+        # Tag the span with the concrete model so the cost ledger can break spend down per model,
+        # not just per agent. Attributes are ignored by the parity check, so this is parity-safe.
         params.tracer.end_span(
             model_span,
             "ok",
             token_usage={"inputTokens": result.usage.input_tokens, "outputTokens": result.usage.output_tokens},
             cost_usd=cost,
+            attributes={"model": f"{params.model.provider}:{params.model.model}"},
         )
         messages.append(result.message)
 

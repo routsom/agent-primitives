@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..tools.types import Tool, ToolContext, ToolRuntime
+from .approvals import ApprovalDecision, ApprovalProvider, ApprovalRequest, AutoApprove, ToolApprovalGate
 from .audit import (
     AuditCorrelation,
     AuditEntry,
@@ -74,6 +75,11 @@ __all__ = [
     "now_iso",
     "CircuitBreakerOptions",
     "ToolCircuitBreaker",
+    "ApprovalDecision",
+    "ApprovalProvider",
+    "ApprovalRequest",
+    "AutoApprove",
+    "ToolApprovalGate",
     "Sanitizer",
     "HarnessOptions",
     "AuthFailure",
@@ -109,6 +115,8 @@ class HarnessOptions:
     circuit_breaker: CircuitBreakerOptions | None = None
     # Applied to every tool's output before it returns to the model. Default: identity.
     sanitize: Sanitizer | None = None
+    # Human-in-the-loop gate for consequential tools. Default: AutoApprove (gates nothing).
+    approvals: ApprovalProvider | None = None
 
 
 @dataclass
@@ -129,6 +137,7 @@ class Harness:
         self._audit_sink: AuditSink = options.audit_sink or NoopAuditSink()
         self._breaker = ToolCircuitBreaker(options.circuit_breaker)
         self._sanitize: Sanitizer = options.sanitize or _identity_sanitizer
+        self._approvals: ApprovalProvider = options.approvals or AutoApprove()
 
     async def execute(self, role: AgentRoleDef, call: HarnessToolCall, runtime: ToolRuntime) -> ToolOutcome:
         outcome = await self._run(role, call, runtime)
@@ -168,6 +177,23 @@ class Harness:
         if self._breaker.is_open(call.tool_name):
             transient = ClassifiedError("transient", f'tool "{call.tool_name}" circuit is open')
             return ToolOutcome(status="rejected", error=classify_error(transient))
+
+        # Human-in-the-loop gate: a consequential tool cannot run without an explicit approval. A
+        # denial is an authorization decision (classifies as `auth`: no retry, security-logged), so
+        # the tool never executes. Pre-execution, so it counts as `rejected`, not `error`.
+        if self._approvals.requires_approval(role.role, call.tool_name):
+            decision = await self._approvals.decide(
+                ApprovalRequest(
+                    role=role.role,
+                    tool_name=call.tool_name,
+                    input=call.input,
+                    idempotency_key=call.idempotency_key,
+                    delegation_depth=call.delegation_depth,
+                )
+            )
+            if decision != "approved":
+                denied = AuthFailure(f'tool "{call.tool_name}" denied by approval gate')
+                return ToolOutcome(status="rejected", error=classify_error(denied))
 
         async def run() -> Any:
             ctx = ToolContext(agent_role=role.role, delegation_depth=call.delegation_depth, runtime=runtime)

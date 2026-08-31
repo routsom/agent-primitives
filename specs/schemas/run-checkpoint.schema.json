@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-primitives.dev/specs/schemas/run-checkpoint.schema.json",
+  "title": "RunCheckpoint",
+  "description": "A durable record of one completed unit of work within a run, keyed by (runId, taskId). Written after a subagent succeeds so a crashed or interrupted swarm can resume: on re-invocation with the same runId, tasks with a checkpoint are restored instead of re-run, and only the missing/failed tasks execute. Only successful ('ok') results are checkpointed - a partial or errored result is intentionally left uncheckpointed so it re-runs on resume. See reference/multi-agent-architecture-notes.md section 12 (durable/resumable execution).",
+  "type": "object",
+  "required": ["runId", "taskId", "savedAt", "result"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "The run this checkpoint belongs to. Resuming means re-invoking the orchestrator with this same runId."
+    },
+    "taskId": {
+      "type": "string",
+      "description": "The subagent task this checkpoint restores. Unique within a run - the resume key."
+    },
+    "savedAt": { "type": "string", "format": "date-time" },
+    "result": {
+      "type": "object",
+      "description": "The AgentResult produced by the completed subagent, restored verbatim on resume. Its status is always 'ok' - see the checkpoint policy above.",
+      "required": ["taskId", "role", "text", "artifactRefs", "status", "needsReview", "reviewFlags"],
+      "properties": {
+        "taskId": { "type": "string" },
+        "role": { "type": "string" },
+        "text": { "type": "string" },
+        "artifactRefs": { "type": "array", "items": { "type": "object" } },
+        "status": { "const": "ok" },
+        "needsReview": { "type": "boolean" },
+        "reviewFlags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

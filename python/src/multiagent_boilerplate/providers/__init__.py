@@ -3,12 +3,15 @@ from __future__ import annotations
 import os
 
 from .mock import MockChatModel
+from .replay import ReplayChatModel, ReplayMode
 from .resilient import ResilienceOptions, ResilientChatModel
 from .types import ChatModel
 
 __all__ = [
     "ChatModel",
     "MockChatModel",
+    "ReplayChatModel",
+    "ReplayMode",
     "ResilientChatModel",
     "ResilienceOptions",
     "resolve_provider",

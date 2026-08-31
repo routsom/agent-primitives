@@ -3,11 +3,12 @@ import { GeminiChatModel } from "./gemini.js";
 import { MockChatModel } from "./mock.js";
 import { OpenAIChatModel } from "./openai.js";
 import { ResilientChatModel, type ResilienceOptions } from "./resilient.js";
+import { ReplayChatModel, type ReplayOptions, type ReplayMode } from "./replay.js";
 import type { ChatModel } from "./types.js";
 
 export * from "./types.js";
-export { AnthropicChatModel, OpenAIChatModel, GeminiChatModel, MockChatModel, ResilientChatModel };
-export type { ResilienceOptions };
+export { AnthropicChatModel, OpenAIChatModel, GeminiChatModel, MockChatModel, ResilientChatModel, ReplayChatModel };
+export type { ResilienceOptions, ReplayOptions, ReplayMode };
 
 export type ProviderName = "anthropic" | "openai" | "google" | "mock";
 
