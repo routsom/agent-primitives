@@ -23,19 +23,19 @@
     "eval:profile": "PROFILER=live tsx src/evals/runEval.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
-    "@google/genai": "^2.18.0",
+    "@anthropic-ai/sdk": "^0.122.0",
+    "@google/genai": "^2.19.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "dotenv": "^16.4.5",
-    "openai": "^6.9.0",
-    "zod": "^4.4.3"
+    "dotenv": "^17.4.2",
+    "openai": "^7.8.0",
+    "zod": "^4.5.1"
   },
   "devDependencies": {
-    "@types/node": "^26.3.0",
+    "@types/node": "^26.4.0",
     "eslint": "^10.9.1",
     "tsup": "^8.5.1",
     "tsx": "^4.23.12",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
   }
